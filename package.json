@@ -1,0 +1,107 @@
+{
+  "name": "image-comparison-app",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Image Comparison Tool built with Electron + React",
+  "author": {
+    "name": "Alireza",
+    "email": "alirezaabadi2016@gmail.com"
+  },
+  "homepage": "https://example.com",
+  "type": "module",
+  "main": "main.js",
+  "build": {
+    "appId": "com.alireza.imagecomparison",
+    "icon": "assets/icons/icon",
+    "productName": "ImageComparisonTool",
+    "executableName": "image-comparison-tool",
+    "files": [
+      "dist",
+      "main.js",
+      "preload.js",
+      "package.json",
+      "assets/icons/**/*",
+      "!node_modules/.cache"
+    ],
+    "directories": {
+      "buildResources": "assets"
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icons/icon.png",
+      "category": "Graphics",
+      "desktop": {
+        "Name": "Image Comparison Tool",
+        "GenericName": "Image Comparison",
+        "Comment": "Compare and search similar images",
+        "Categories": "Graphics;Photography;",
+        "Keywords": "image;comparison;similarity;photo;search;"
+      }
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icons/icon.png",
+      "requestedExecutionLevel": "asInvoker"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Image Comparison Tool",
+      "installerIcon": "assets/icons/icon.ico",
+      "uninstallerIcon": "assets/icons/icon.ico"
+    }
+  },
+  "scripts": {
+    "dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
+    "build": "vite build",
+    "lint": "eslint .",
+    "preview": "vite preview",
+    "electron": "concurrently \"npm run dev\" \"wait-on http://localhost:5173 && electron .\"",
+    "electron-dev": "NODE_ENV=development concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
+    "electron-build": "npm run build && electron-builder",
+    "dist": "npm run build && electron-builder",
+    "dist:linux": "npm run build && electron-builder --linux",
+    "dist:win": "npm run build && electron-builder --win"
+  },
+  "dependencies": {
+    "@tailwindcss/vite": "^4.1.11",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-router-dom": "^7.6.3",
+    "tailwindcss": "^4.1.11",
+    "usb": "^2.16.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.30.1",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "@vitejs/plugin-react": "^4.6.0",
+    "concurrently": "^9.2.0",
+    "electron": "^37.2.1",
+    "electron-builder": "^24.13.3",
+    "eslint": "^9.30.1",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-react-refresh": "^0.4.20",
+    "globals": "^16.3.0",
+    "vite": "^7.0.4",
+    "wait-on": "^8.0.3"
+  }
+}
