@@ -70,7 +70,8 @@
     }
   },
   "scripts": {
-    "dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
+    
+    "dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron . --no-sandbox\"",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
