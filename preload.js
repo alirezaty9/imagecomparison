@@ -22,6 +22,9 @@ const electronAPI = {
   checkHardwareToken: (vendorId, productId) => ipcRenderer.invoke('check-hardware-token', vendorId, productId),
   requestTokenAccess: (vendorId, productId) => ipcRenderer.invoke('request-token-access', vendorId, productId),
   
+  // API Request Handler - برای حل مشکل CORS
+  apiRequest: (options) => ipcRenderer.invoke('api-request', options),
+  
   // Event listeners
   onFilesSelected: (callback) => ipcRenderer.on('files-selected', callback),
   onTokenConnected: (callback) => ipcRenderer.on('token-connected', callback),
@@ -31,6 +34,32 @@ const electronAPI = {
 
 // Expose to window
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);
+
+// Enhanced fetch wrapper که از electronAPI استفاده می‌کند
+contextBridge.exposeInMainWorld('electronFetch', async (url, options = {}) => {
+  try {
+    const result = await electronAPI.apiRequest({
+      url,
+      method: options.method || 'GET',
+      headers: options.headers || {},
+      body: options.body || null
+    });
+
+    if (result.success) {
+      return {
+        ok: result.status >= 200 && result.status < 300,
+        status: result.status,
+        headers: result.headers,
+        json: async () => result.data,
+        text: async () => typeof result.data === 'string' ? result.data : JSON.stringify(result.data)
+      };
+    } else {
+      throw new Error(result.error);
+    }
+  } catch (error) {
+    throw error;
+  }
+});
 
 // File system API
 contextBridge.exposeInMainWorld('fs', {

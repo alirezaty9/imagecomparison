@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Menu, dialog, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, Menu, dialog, shell, net } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
@@ -135,7 +135,7 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(currentDir, 'preload.js'),
-      webSecurity: true,
+      webSecurity: !app.isPackaged, // فقط در development غیرفعال
       allowRunningInsecureContent: false
     },
   });
@@ -144,9 +144,25 @@ function createWindow() {
 
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173');
-    // mainWindow.webContents.openDevTools();
+    mainWindow.webContents.openDevTools();
   } else {
     mainWindow.loadFile(path.join(currentDir, 'dist', 'index.html'));
+  }
+
+  // CORS handling for development
+  if (isDev) {
+    mainWindow.webContents.session.webRequest.onBeforeSendHeaders((details, callback) => {
+      callback({ requestHeaders: details.requestHeaders });
+    });
+
+    mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+      if (details.responseHeaders) {
+        details.responseHeaders['Access-Control-Allow-Origin'] = ['*'];
+        details.responseHeaders['Access-Control-Allow-Methods'] = ['GET, POST, PUT, DELETE, OPTIONS'];
+        details.responseHeaders['Access-Control-Allow-Headers'] = ['*'];
+      }
+      callback({ responseHeaders: details.responseHeaders });
+    });
   }
 
   mainWindow.once('ready-to-show', () => {
@@ -195,6 +211,62 @@ function createMenu() {
   const menu = Menu.buildFromTemplate(template);
   Menu.setApplicationMenu(menu);
 }
+
+// API Request Handler برای حل مشکل CORS
+ipcMain.handle('api-request', async (event, { url, method = 'GET', headers = {}, body = null }) => {
+  try {
+    const fullUrl = url.startsWith('http') ? url : `http://192.168.88.69:8000${url}`;
+    
+    const request = net.request({
+      method,
+      url: fullUrl,
+      headers: {
+        'Content-Type': 'application/json',
+        ...headers
+      }
+    });
+
+    return new Promise((resolve, reject) => {
+      let responseData = '';
+
+      request.on('response', (response) => {
+        response.on('data', (chunk) => {
+          responseData += chunk;
+        });
+
+        response.on('end', () => {
+          try {
+            const data = responseData ? JSON.parse(responseData) : null;
+            resolve({ 
+              success: true, 
+              data, 
+              status: response.statusCode,
+              headers: response.headers 
+            });
+          } catch (error) {
+            resolve({ 
+              success: true, 
+              data: responseData, 
+              status: response.statusCode,
+              headers: response.headers 
+            });
+          }
+        });
+      });
+
+      request.on('error', (error) => {
+        resolve({ success: false, error: error.message });
+      });
+
+      if (body && method !== 'GET') {
+        request.write(typeof body === 'string' ? body : JSON.stringify(body));
+      }
+      request.end();
+    });
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
 
 // IPC Handlers
 ipcMain.handle('check-hardware-token', async (event, vendorId, productId) => {
