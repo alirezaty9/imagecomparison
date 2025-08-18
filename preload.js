@@ -25,10 +25,20 @@ const electronAPI = {
   // API Request Handler - برای حل مشکل CORS
   apiRequest: (options) => ipcRenderer.invoke('api-request', options),
   
+  // Shell Command Execution
+  executeShellCommand: (command, options) => ipcRenderer.invoke('execute-shell-command', command, options),
+  verifyPkcs11Signature: (options) => ipcRenderer.invoke('verify-pkcs11-signature', options),
+  
+  // Test123 operations
+  runTest123Command: (args) => ipcRenderer.invoke('run-test123-command', args),
+  signAndVerifyFile: () => ipcRenderer.invoke('sign-and-verify-file'),
+  
   // Event listeners
   onFilesSelected: (callback) => ipcRenderer.on('files-selected', callback),
   onTokenConnected: (callback) => ipcRenderer.on('token-connected', callback),
   onTokenDisconnected: (callback) => ipcRenderer.on('token-disconnected', callback),
+  onCommandLog: (callback) => ipcRenderer.on('command-log', callback),
+  onFileSignResult: (callback) => ipcRenderer.on('file-sign-result', callback),
   removeAllListeners: (channel) => ipcRenderer.removeAllListeners(channel)
 };
 
@@ -102,6 +112,38 @@ contextBridge.exposeInMainWorld('fs', {
     } catch (error) {
       throw error;
     }
+  }
+});
+
+// Shell API
+contextBridge.exposeInMainWorld('shell', {
+  execute: async (command, options = {}) => {
+    try {
+      return await electronAPI.executeShellCommand(command, options);
+    } catch (error) {
+      throw error;
+    }
+  },
+  
+  verifyPkcs11: async (options = {}) => {
+    try {
+      return await electronAPI.verifyPkcs11Signature(options);
+    } catch (error) {
+      throw error;
+    }
+  }
+});
+
+// Command Logger
+contextBridge.exposeInMainWorld('commandLogger', {
+  onLog: (callback) => {
+    electronAPI.onCommandLog((event, log) => {
+      callback(log);
+    });
+  },
+  
+  removeListeners: () => {
+    electronAPI.removeAllListeners('command-log');
   }
 });
 

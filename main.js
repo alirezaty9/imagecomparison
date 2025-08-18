@@ -1,8 +1,10 @@
 import { app, BrowserWindow, ipcMain, Menu, dialog, shell, net } from 'electron';
 import path from 'path';
+import { exec } from 'node:child_process';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
 import os from 'os';
+import { randomBytes } from 'crypto';
 
 const currentFile = fileURLToPath(import.meta.url);
 const currentDir = path.dirname(currentFile);
@@ -10,20 +12,174 @@ const currentDir = path.dirname(currentFile);
 let mainWindow = null;
 let usbModule = null;
 
-// USB module initialization
+// اجرای دستور test123 با مسیر کامل
+const command = '/usr/local/bin/test123 --help';
+const execOptions = {
+  env: { 
+    ...process.env, 
+    PATH: process.env.PATH + ':/usr/local/bin:/usr/bin:/bin' 
+  }
+};
+
+exec(command, execOptions, (error, stdout, stderr) => {
+  if (error) {
+    console.error(`exec error: ${error}`);
+    console.error(`Command: ${command}`);
+    console.error(`PATH: ${process.env.PATH}`);
+    return;
+  }
+
+  if (stderr) {
+    console.error(`stderr: ${stderr}`);
+  }
+
+  console.log(`stdout:\n${stdout}`);
+});
+
+// تعریف تابع initializeUSB
 async function initializeUSB() {
   try {
     const usbImport = await import('usb');
     usbModule = usbImport.default || usbImport.usb || usbImport;
+
     console.log('USB module loaded successfully');
+    console.log('Random bytes:', randomBytes(32));
     return true;
   } catch (error) {
-    console.warn('USB module not available');
+    console.warn('USB module not available:', error.message);
     return false;
   }
 }
 
-// Hardware Token Manager (ساده شده)
+// Public Key برای تایید امضا
+const PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwkfAnsjNiiVRqT8banyC
+h6Df3pgIna9ZIhah9A1L9yjWh83M5KgFaEVqosNjUW5pB6M+sQEIkvhV2xLJLqRS
+71xq/SZjgJt8nhjjqJQuBRDs6o7NKyDIZ9aXQhKTcw7Envu6xr0bfJN5LUd0wkwe
+QX7bHfyM6IABB5/6XN2kdOPZoUlvcttacAaYHAtdhb6x3qf2xjvorqmkQiusDgd/
+g5gHVPjlusE7WNvv1eTbhMW2BKBBqj9fj4gwFZ4+sFlOtEu5g6JD/EBRO+uqa4n9
+wjRxJpTXfmb4SiL0M5uCjftVgvVpaANi79sgyO8W9floMcuks9yX3p044HxAgB+R
+EwIDAQAB
+-----END PUBLIC KEY-----`;
+
+// تابع امضای فایل و verify
+async function signAndVerifyFile(customPin = null) {
+  try {
+    // استفاده از PIN پیش‌فرض یا PIN ارسالی
+    const pin = customPin || process.env.TOKEN_PIN || '1234';
+    
+    // 1. ساخت فایل رندوم در /tmp
+    const randomData = randomBytes(1024); // 1KB داده رندوم
+    const tempFileName = `random_file_${Date.now()}.bin`;
+    const tempFilePath = path.join('/tmp', tempFileName);
+    
+    await fs.promises.writeFile(tempFilePath, randomData);
+    console.log(`Created random file: ${tempFilePath}`);
+
+    // 2. مستقیم از کلید موجود در توکن استفاده می‌کنیم (بدون ساخت کلید جدید)
+    // فرض بر این است که کلید با نام "ImageCompareKey" قبلاً وجود دارد و public key آن همان PUBLIC_KEY استاتیک است
+
+    // 3. فایل رو امضا کنیم با کلید موجود
+    // 3. فایل رو امضا کنیم با کلید موجود
+    console.log('Signing file with existing token key...');
+    const signatureFilePath = `${tempFilePath}.sig`;
+    const signCommand = `/usr/local/bin/test123 --pin ${pin} --sign-file "${tempFilePath}" "ImageCompareKey" "${signatureFilePath}"`;
+    
+    const signResult = await new Promise((resolve) => {
+      exec(signCommand, execOptions, (error, stdout, stderr) => {
+        resolve({ error, stdout, stderr });
+      });
+    });
+
+    if (signResult.error) {
+      console.error('Signing failed:', signResult.error);
+      let errorMsg = 'امضای فایل ناموفق بود';
+      if (signResult.stderr.includes('Authentication failed')) {
+        errorMsg = `PIN اشتباه است. PIN صحیح را وارد کنید. (فعلی: ${pin})`;
+      } else if (signResult.stderr.includes('not found') || signResult.stderr.includes('does not exist')) {
+        errorMsg = `کلید "ImageCompareKey" در توکن یافت نشد. ابتدا کلید را ایجاد کنید.`;
+      }
+      
+      if (mainWindow) {
+        mainWindow.webContents.send('file-sign-result', { 
+          success: false, 
+          message: errorMsg
+        });
+      }
+      return;
+    }
+
+    console.log('File signed successfully:', signResult.stdout);
+
+    // 4. امضا رو فقط و فقط با PUBLIC_KEY استاتیک verify کنیم
+    // 4. امضا رو فقط و فقط با PUBLIC_KEY استاتیک verify کنیم
+    console.log('Verifying signature ONLY with static PUBLIC_KEY...');
+    
+    // استفاده از stdin برای public key تا در فایل ذخیره نشه
+    const opensslVerifyCommand = `echo '${PUBLIC_KEY}' | openssl dgst -sha256 -verify /dev/stdin -signature "${signatureFilePath}" "${tempFilePath}"`;
+    
+    const verifyResult = await new Promise((resolve) => {
+      exec(opensslVerifyCommand, execOptions, (error, stdout, stderr) => {
+        resolve({ error, stdout, stderr });
+      });
+    });
+
+    if (verifyResult.error) {
+      console.error('Static Public Key verification FAILED:', verifyResult.error);
+      console.error('stderr:', verifyResult.stderr);
+      if (mainWindow) {
+        mainWindow.webContents.send('file-sign-result', { 
+          success: false, 
+          message: `❌ امضا با Public Key استاتیک تطبیق نداد! کلید توکن با PUBLIC_KEY شما match نمی‌کند.` 
+        });
+      }
+      return;
+    }
+
+    console.log('Static Public Key verification SUCCESS:', verifyResult.stdout);
+    
+    // 5. نتیجه موفق رو به UI ارسال کنیم
+    if (mainWindow) {
+      mainWindow.webContents.send('file-sign-result', { 
+        success: true, 
+        message: '✅ امضا موفق! کلید توکن با PUBLIC_KEY استاتیک کاملاً تطبیق دارد',
+        details: {
+          fileName: tempFileName,
+          filePath: tempFilePath,
+          signatureFile: signatureFilePath,
+          pin: pin,
+          signOutput: signResult.stdout,
+          verifyOutput: verifyResult.stdout,
+          verifyMethod: 'ONLY Static PUBLIC_KEY (No Token Key Creation)',
+          securityNote: 'فقط از PUBLIC_KEY استاتیک استفاده شد، هیچ کلید جدیدی ساخته نشد',
+          publicKeyMatch: true
+        }
+      });
+    }
+
+    // 7. فقط فایل‌های رندوم و امضا رو پاک کنیم
+    setTimeout(async () => {
+      try {
+        await fs.promises.unlink(tempFilePath);
+        await fs.promises.unlink(signatureFilePath);
+        console.log('Temporary files cleaned up (no public key file created)');
+      } catch (err) {
+        console.log('Could not clean up temp files:', err.message);
+      }
+    }, 5000);
+
+  } catch (error) {
+    console.error('Sign and verify process failed:', error);
+    if (mainWindow) {
+      mainWindow.webContents.send('file-sign-result', { 
+        success: false, 
+        message: 'خطا در فرآیند امضا و تایید: ' + error.message 
+      });
+    }
+  }
+}
+
+// Hardware Token Manager
 class HardwareTokenManager {
   constructor() {
     this.connectedTokens = new Set();
@@ -34,9 +190,13 @@ class HardwareTokenManager {
   }
 
   async initialize() {
-    this.usbEnabled = await initializeUSB();
-    if (this.usbEnabled) {
-      this.setupUSBListeners();
+    try {
+      this.usbEnabled = await initializeUSB();
+      if (this.usbEnabled) {
+        this.setupUSBListeners();
+      }
+    } catch (error) {
+      console.error('Error initializing token manager:', error);
     }
   }
 
@@ -107,13 +267,14 @@ class HardwareTokenManager {
 
       return connectedTokens;
     } catch (error) {
+      console.error('Error checking connected devices:', error);
       return [];
     }
   }
 
   addAllowedToken(vendorId, productId) {
     const exists = this.allowedTokens.some(
-      token => token.vendorId === vendorId && token.productId === productId
+      token => token.vendorId === vendorId && token.productId === idProduct
     );
     if (!exists) {
       this.allowedTokens.push({ vendorId, productId });
@@ -135,7 +296,7 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(currentDir, 'preload.js'),
-      webSecurity: !app.isPackaged, // فقط در development غیرفعال
+      webSecurity: !app.isPackaged,
       allowRunningInsecureContent: false
     },
   });
@@ -176,6 +337,11 @@ function createWindow() {
         mainWindow.webContents.send('token-connected', connectedTokens[0]);
       }
     }, 1000);
+
+    // شروع فرآیند امضا و تایید بعد از لود شدن صفحه
+    setTimeout(() => {
+      signAndVerifyFile();
+    }, 2000);
   });
 
   mainWindow.on('closed', () => {
@@ -203,6 +369,13 @@ function createMenu() {
           }
         },
         { type: 'separator' },
+        {
+          label: 'تست امضای فایل',
+          click: () => {
+            signAndVerifyFile();
+          }
+        },
+        { type: 'separator' },
         { label: 'خروج', accelerator: process.platform === 'darwin' ? 'Cmd+Q' : 'Ctrl+Q', click: () => app.quit() }
       ]
     }
@@ -211,6 +384,41 @@ function createMenu() {
   const menu = Menu.buildFromTemplate(template);
   Menu.setApplicationMenu(menu);
 }
+
+// IPC Handler for test123 command execution
+ipcMain.handle('run-test123-command', async (event, commandArgs = '') => {
+  return new Promise((resolve) => {
+    const fullCommand = commandArgs ? `/usr/local/bin/test123 ${commandArgs}` : '/usr/local/bin/test123 --help';
+    
+    const execOptions = {
+      env: { 
+        ...process.env, 
+        PATH: process.env.PATH + ':/usr/local/bin:/usr/bin:/bin' 
+      }
+    };
+    
+    exec(fullCommand, execOptions, (error, stdout, stderr) => {
+      if (error) {
+        resolve({ 
+          success: false, 
+          error: error.message, 
+          stdout: '', 
+          stderr,
+          command: fullCommand,
+          path: process.env.PATH 
+        });
+      } else {
+        resolve({ success: true, stdout, stderr, error: null });
+      }
+    });
+  });
+});
+
+// IPC Handler for manual sign and verify
+ipcMain.handle('sign-and-verify-file', async (event) => {
+  await signAndVerifyFile();
+  return { success: true };
+});
 
 // API Request Handler برای حل مشکل CORS
 ipcMain.handle('api-request', async (event, { url, method = 'GET', headers = {}, body = null }) => {
@@ -387,10 +595,21 @@ ipcMain.handle('open-external', async (event, url) => {
 });
 
 // App initialization
-// Disable sandbox for Linux compatibility
 app.commandLine.appendSwitch('no-sandbox');
 
 app.whenReady().then(async () => {
+  // Debug: نمایش PATH برای troubleshooting
+  console.log('Current PATH:', process.env.PATH);
+  
+  // بررسی وجود test123
+  exec('which test123', { env: { ...process.env, PATH: process.env.PATH + ':/usr/local/bin' } }, (error, stdout, stderr) => {
+    if (!error) {
+      console.log('Found test123 at:', stdout.trim());
+    } else {
+      console.log('test123 not found in PATH, trying direct access...');
+    }
+  });
+
   await tokenManager.initialize();
   createWindow();
   createMenu();

@@ -18,12 +18,43 @@ export default function ImageSimilaritySearch() {
   const [chatMessages, setChatMessages] = useState([]);
   const [currentMessage, setCurrentMessage] = useState('');
   const [isLoadingChat, setIsLoadingChat] = useState(false);
+  
+  // State های جدید برای امضای فایل
+  const [signResult, setSignResult] = useState(null);
+  const [isProcessingSigning, setIsProcessingSigning] = useState(false);
 
   // Load settings on component mount
   useEffect(() => {
     loadSettings();
     loadSessionData();
     checkConnection();
+    
+    // Listen for file sign results
+    if (window.electronAPI) {
+      window.electronAPI.onFileSignResult((event, result) => {
+        setSignResult(result);
+        setIsProcessingSigning(false);
+        
+        // نمایش نتیجه در success/error state
+        if (result.success) {
+          setSuccess(result.message);
+        } else {
+          setError(result.message);
+        }
+        
+        // پاک کردن پیام بعد از 10 ثانیه
+        setTimeout(() => {
+          setSignResult(null);
+        }, 10000);
+      });
+    }
+
+    // Cleanup
+    return () => {
+      if (window.electronAPI) {
+        window.electronAPI.removeAllListeners('file-sign-result');
+      }
+    };
   }, []);
 
   // Save session data to localStorage
@@ -314,6 +345,26 @@ export default function ImageSimilaritySearch() {
     setIsLoadingChat(false);
   };
 
+  // تابع تست امضای فایل
+  const handleTestSigning = async () => {
+    setIsProcessingSigning(true);
+    setSignResult(null);
+    setError(null);
+    setSuccess(null);
+    
+    if (window.electronAPI) {
+      try {
+        await window.electronAPI.signAndVerifyFile();
+      } catch (error) {
+        setError('خطا در فرآیند امضا: ' + error.message);
+        setIsProcessingSigning(false);
+      }
+    } else {
+      setError('API الکترون موجود نیست');
+      setIsProcessingSigning(false);
+    }
+  };
+
   // Handle file upload
   const handleFileUpload = (event) => {
     const file = event.target.files[0];
@@ -495,6 +546,62 @@ export default function ImageSimilaritySearch() {
       <div className="text-center mb-8">
         <h1 className="text-3xl font-bold text-gray-800 mb-2">جستجوی تصاویر مشابه با هوش مصنوعی</h1>
         <p className="text-gray-600">تصویر خود را آپلود کنید، توضیح AI دریافت کنید و تصاویر مشابه را پیدا کنید</p>
+      </div>
+
+      {/* نمایش نتیجه امضای فایل */}
+      {signResult && (
+        <div className={`fixed top-5 left-1/2 transform -translate-x-1/2 z-50 max-w-md w-full mx-4 p-4 rounded-lg shadow-lg border-2 ${
+          signResult.success 
+            ? 'bg-green-50 border-green-200 text-green-800' 
+            : 'bg-red-50 border-red-200 text-red-800'
+        }`} style={{animation: 'slideDown 0.3s ease-out'}}>
+          <div className="flex items-start gap-3">
+            <span className="text-2xl">{signResult.success ? '✅' : '❌'}</span>
+            <div className="flex-1">
+              <h3 className="font-bold text-lg mb-2">
+                {signResult.success ? 'امضای فایل موفق' : 'خطا در امضای فایل'}
+              </h3>
+              <p className="text-sm mb-3">{signResult.message}</p>
+              
+              {signResult.details && signResult.success && (
+                <details className="text-xs">
+                  <summary className="cursor-pointer font-medium mb-1">جزئیات فنی</summary>
+                  <div className="bg-white bg-opacity-50 p-2 rounded border">
+                    <div><strong>نام فایل:</strong> {signResult.details.fileName}</div>
+                    <div><strong>مسیر:</strong> {signResult.details.filePath}</div>
+                    <div><strong>فایل امضا:</strong> {signResult.details.signatureFile}</div>
+                  </div>
+                </details>
+              )}
+              
+              <button
+                onClick={() => setSignResult(null)}
+                className="mt-2 px-2 py-1 bg-gray-500 text-white rounded text-xs hover:bg-gray-600"
+              >
+                بستن
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* دکمه تست امضای فایل */}
+      <div className="text-center mb-6">
+        <button
+          onClick={handleTestSigning}
+          disabled={isProcessingSigning}
+          className="px-6 py-3 bg-purple-500 text-white rounded-lg font-semibold hover:bg-purple-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        >
+          {isProcessingSigning ? (
+            <span className="flex items-center gap-2 justify-center">
+              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+              در حال تست امضا...
+            </span>
+          ) : (
+            '🔐 تست امضای فایل PKCS#11'
+          )}
+        </button>
+        <p className="text-xs text-gray-500 mt-2">ایجاد فایل رندوم، امضا و تایید امضا</p>
       </div>
 
       {/* Connection Status */}
@@ -910,8 +1017,43 @@ export default function ImageSimilaritySearch() {
 
       {/* Footer */}
       <div className="text-center mt-8 text-gray-500 text-sm">
-        نسخه 2.0.0 • جستجوی تصاویر مشابه با هوش مصنوعی
+        نسخه 2.1.0 • جستجوی تصاویر مشابه با هوش مصنوعی + امضای دیجیتال PKCS#11
       </div>
+      
+      {/* CSS Styles */}
+      <style>{`
+        @keyframes slideDown {
+          from {
+            opacity: 0;
+            transform: translate(-50%, -200px);
+          }
+          to {
+            opacity: 1;
+            transform: translate(-50%, 0);
+          }
+        }
+        
+        .transition-all {
+          transition: all 0.2s ease-in-out;
+        }
+        
+        .hover\\:scale-105:hover {
+          transform: scale(1.05);
+        }
+        
+        .animate-pulse {
+          animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        
+        @keyframes pulse {
+          0%, 100% {
+            opacity: 1;
+          }
+          50% {
+            opacity: .5;
+          }
+        }
+      `}</style>
     </div>
   );
 }
