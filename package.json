@@ -27,6 +27,15 @@
       "buildResources": "assets"
     },
     "linux": {
+      "args": [
+        "--no-sandbox"
+      ],
+      "extraResources": [
+        {
+          "from": "./drivers/ePass3003-Linux-latest.tar.gz",
+          "to": "driver-installer.tar.gz"
+        }
+      ],
       "target": [
         {
           "target": "deb",
@@ -46,6 +55,12 @@
       }
     },
     "win": {
+      "extraResources": [
+        {
+          "from": "./drivers/ePass3003-English-withX64-latest.exe",
+          "to": "driver-installer.exe"
+        }
+      ],
       "target": [
         {
           "target": "nsis",
@@ -70,7 +85,6 @@
     }
   },
   "scripts": {
-    
     "dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron . --no-sandbox\"",
     "build": "vite build",
     "lint": "eslint .",
@@ -84,6 +98,7 @@
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.11",
+    "graphene-pk11": "^2.3.6",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-router-dom": "^7.6.3",

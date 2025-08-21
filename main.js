@@ -1,58 +1,60 @@
-import { app, BrowserWindow, ipcMain, Menu, dialog, shell, net } from 'electron';
-import path from 'path';
-import { exec } from 'node:child_process';
-import { fileURLToPath } from 'url';
-import fs from 'fs';
-import os from 'os';
-import { randomBytes } from 'crypto';
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  Menu,
+  dialog,
+  shell,
+  net,
+} from "electron";
+import path from "path";
+import { fileURLToPath } from "url";
+import fs from "fs/promises";
+import os from "os";
+import { randomBytes, createVerify } from "crypto";
+import * as graphene from "graphene-pk11";
+
+// ====================================================================
+// SECTION 1: SETUP & CONFIGURATION
+// ====================================================================
 
 const currentFile = fileURLToPath(import.meta.url);
 const currentDir = path.dirname(currentFile);
-
 let mainWindow = null;
-let usbModule = null;
 
-// اجرای دستور test123 با مسیر کامل
-const command = '/usr/local/bin/test123 --help';
-const execOptions = {
-  env: { 
-    ...process.env, 
-    PATH: process.env.PATH + ':/usr/local/bin:/usr/bin:/bin' 
+// تشخیص مسیر درایور بر اساس پلتفرم
+const getDriverPath = () => {
+  switch (process.platform) {
+    case "win32":
+      // مسیرهای محتمل برای ویندوز
+      return [
+        "C:\\Windows\\System32\\shuttle_p11.dll",
+        "C:\\Program Files\\ShuttleCSP\\shuttle_p11.dll",
+        "C:\\Program Files (x86)\\ShuttleCSP\\shuttle_p11.dll",
+      ];
+   // main.js
+
+case "linux":
+  return [
+    // مسیر جدید را در ابتدا اضافه کنید
+    path.join(currentDir, "Token", "lib", "libshuttle_p11v220.so.1.0.0"),
+    "/usr/local/lib/libshuttle_p11v220.so",
+    "/usr/lib/libshuttle_p11v220.so",
+    "/lib/libshuttle_p11v220.so",
+  ];
+    case "darwin": // macOS
+      return [
+        "/usr/local/lib/libshuttle_p11v220.dylib",
+        "/Library/Frameworks/ShuttleCSP.framework/ShuttleCSP",
+      ];
+    default:
+      return [];
   }
 };
 
-exec(command, execOptions, (error, stdout, stderr) => {
-  if (error) {
-    console.error(`exec error: ${error}`);
-    console.error(`Command: ${command}`);
-    console.error(`PATH: ${process.env.PATH}`);
-    return;
-  }
-
-  if (stderr) {
-    console.error(`stderr: ${stderr}`);
-  }
-
-  console.log(`stdout:\n${stdout}`);
-});
-
-// تعریف تابع initializeUSB
-async function initializeUSB() {
-  try {
-    const usbImport = await import('usb');
-    usbModule = usbImport.default || usbImport.usb || usbImport;
-
-    console.log('USB module loaded successfully');
-    console.log('Random bytes:', randomBytes(32));
-    return true;
-  } catch (error) {
-    console.warn('USB module not available:', error.message);
-    return false;
-  }
-}
-
-// Public Key برای تایید امضا
-const PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
+const CONFIG = {
+  DRIVER_PATHS: getDriverPath(),
+  PUBLIC_KEY: `-----BEGIN PUBLIC KEY-----
 MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwkfAnsjNiiVRqT8banyC
 h6Df3pgIna9ZIhah9A1L9yjWh83M5KgFaEVqosNjUW5pB6M+sQEIkvhV2xLJLqRS
 71xq/SZjgJt8nhjjqJQuBRDs6o7NKyDIZ9aXQhKTcw7Envu6xr0bfJN5LUd0wkwe
@@ -60,229 +62,298 @@ QX7bHfyM6IABB5/6XN2kdOPZoUlvcttacAaYHAtdhb6x3qf2xjvorqmkQiusDgd/
 g5gHVPjlusE7WNvv1eTbhMW2BKBBqj9fj4gwFZ4+sFlOtEu5g6JD/EBRO+uqa4n9
 wjRxJpTXfmb4SiL0M5uCjftVgvVpaANi79sgyO8W9floMcuks9yX3p044HxAgB+R
 EwIDAQAB
------END PUBLIC KEY-----`;
+-----END PUBLIC KEY-----`,
 
-// تابع امضای فایل و verify
-async function signAndVerifyFile(customPin = null) {
-  try {
-    // استفاده از PIN پیش‌فرض یا PIN ارسالی
-    const pin = customPin || process.env.TOKEN_PIN || '1234';
-    
-    // 1. ساخت فایل رندوم در /tmp
-    const randomData = randomBytes(1024); // 1KB داده رندوم
-    const tempFileName = `random_file_${Date.now()}.bin`;
-    const tempFilePath = path.join('/tmp', tempFileName);
-    
-    await fs.promises.writeFile(tempFilePath, randomData);
-    console.log(`Created random file: ${tempFilePath}`);
+  KEY_LABEL: "ImageCompareKey",
+  DEFAULT_PIN: process.env.TOKEN_PIN || "1234",
+  SIGNATURE_MECHANISM: "SHA256_RSA_PKCS", // مکانیزم امضا
+};
 
-    // 2. مستقیم از کلید موجود در توکن استفاده می‌کنیم (بدون ساخت کلید جدید)
-    // فرض بر این است که کلید با نام "ImageCompareKey" قبلاً وجود دارد و public key آن همان PUBLIC_KEY استاتیک است
+// ====================================================================
+// SECTION 2: ENHANCED PKCS#11 TOKEN MANAGER CLASS
+// ====================================================================
 
-    // 3. فایل رو امضا کنیم با کلید موجود
-    // 3. فایل رو امضا کنیم با کلید موجود
-    console.log('Signing file with existing token key...');
-    const signatureFilePath = `${tempFilePath}.sig`;
-    const signCommand = `/usr/local/bin/test123 --pin ${pin} --sign-file "${tempFilePath}" "ImageCompareKey" "${signatureFilePath}"`;
-    
-    const signResult = await new Promise((resolve) => {
-      exec(signCommand, execOptions, (error, stdout, stderr) => {
-        resolve({ error, stdout, stderr });
-      });
-    });
-
-    if (signResult.error) {
-      console.error('Signing failed:', signResult.error);
-      let errorMsg = 'امضای فایل ناموفق بود';
-      if (signResult.stderr.includes('Authentication failed')) {
-        errorMsg = `PIN اشتباه است. PIN صحیح را وارد کنید. (فعلی: ${pin})`;
-      } else if (signResult.stderr.includes('not found') || signResult.stderr.includes('does not exist')) {
-        errorMsg = `کلید "ImageCompareKey" در توکن یافت نشد. ابتدا کلید را ایجاد کنید.`;
-      }
-      
-      if (mainWindow) {
-        mainWindow.webContents.send('file-sign-result', { 
-          success: false, 
-          message: errorMsg
-        });
-      }
-      return;
-    }
-
-    console.log('File signed successfully:', signResult.stdout);
-
-    // 4. امضا رو فقط و فقط با PUBLIC_KEY استاتیک verify کنیم
-    // 4. امضا رو فقط و فقط با PUBLIC_KEY استاتیک verify کنیم
-    console.log('Verifying signature ONLY with static PUBLIC_KEY...');
-    
-    // استفاده از stdin برای public key تا در فایل ذخیره نشه
-    const opensslVerifyCommand = `echo '${PUBLIC_KEY}' | openssl dgst -sha256 -verify /dev/stdin -signature "${signatureFilePath}" "${tempFilePath}"`;
-    
-    const verifyResult = await new Promise((resolve) => {
-      exec(opensslVerifyCommand, execOptions, (error, stdout, stderr) => {
-        resolve({ error, stdout, stderr });
-      });
-    });
-
-    if (verifyResult.error) {
-      console.error('Static Public Key verification FAILED:', verifyResult.error);
-      console.error('stderr:', verifyResult.stderr);
-      if (mainWindow) {
-        mainWindow.webContents.send('file-sign-result', { 
-          success: false, 
-          message: `❌ امضا با Public Key استاتیک تطبیق نداد! کلید توکن با PUBLIC_KEY شما match نمی‌کند.` 
-        });
-      }
-      return;
-    }
-
-    console.log('Static Public Key verification SUCCESS:', verifyResult.stdout);
-    
-    // 5. نتیجه موفق رو به UI ارسال کنیم
-    if (mainWindow) {
-      mainWindow.webContents.send('file-sign-result', { 
-        success: true, 
-        message: '✅ امضا موفق! کلید توکن با PUBLIC_KEY استاتیک کاملاً تطبیق دارد',
-        details: {
-          fileName: tempFileName,
-          filePath: tempFilePath,
-          signatureFile: signatureFilePath,
-          pin: pin,
-          signOutput: signResult.stdout,
-          verifyOutput: verifyResult.stdout,
-          verifyMethod: 'ONLY Static PUBLIC_KEY (No Token Key Creation)',
-          securityNote: 'فقط از PUBLIC_KEY استاتیک استفاده شد، هیچ کلید جدیدی ساخته نشد',
-          publicKeyMatch: true
-        }
-      });
-    }
-
-    // 7. فقط فایل‌های رندوم و امضا رو پاک کنیم
-    setTimeout(async () => {
-      try {
-        await fs.promises.unlink(tempFilePath);
-        await fs.promises.unlink(signatureFilePath);
-        console.log('Temporary files cleaned up (no public key file created)');
-      } catch (err) {
-        console.log('Could not clean up temp files:', err.message);
-      }
-    }, 5000);
-
-  } catch (error) {
-    console.error('Sign and verify process failed:', error);
-    if (mainWindow) {
-      mainWindow.webContents.send('file-sign-result', { 
-        success: false, 
-        message: 'خطا در فرآیند امضا و تایید: ' + error.message 
-      });
-    }
-  }
-}
-
-// Hardware Token Manager
-class HardwareTokenManager {
+class Pkcs11TokenManager {
   constructor() {
-    this.connectedTokens = new Set();
-    this.allowedTokens = [
-      { vendorId: 0x096e, productId: 0x0703 } // Feitian token
-    ];
-    this.usbEnabled = false;
+    this.lastVerification = null;
+    this.availableDriverPath = null;
+    this.isInitialized = false;
   }
 
+  // یافتن درایور موجود در سیستم
+  async findAvailableDriver() {
+    for (const driverPath of CONFIG.DRIVER_PATHS) {
+      try {
+        await fs.access(driverPath);
+        console.log(`درایور یافت شد: ${driverPath}`);
+        this.availableDriverPath = driverPath;
+        return driverPath;
+      } catch (error) {
+        console.log(`درایور یافت نشد: ${driverPath}`);
+      }
+    }
+    throw new Error("هیچ درایور PKCS#11 معتبری در سیستم یافت نشد");
+  }
+
+  // اولیه سازی ماژول
   async initialize() {
+    if (this.isInitialized) return;
+
+    if (!this.availableDriverPath) {
+      await this.findAvailableDriver();
+    }
+
+    this.isInitialized = true;
+    console.log("PKCS#11 Manager آماده شد");
+  }
+
+  // لیست کردن اسلات‌های موجود (برای دیباگ)
+  async listAvailableSlots() {
+    let mod = null;
     try {
-      this.usbEnabled = await initializeUSB();
-      if (this.usbEnabled) {
-        this.setupUSBListeners();
+      mod = graphene.Module.load(this.availableDriverPath, "ShuttlePKCS11");
+      mod.initialize();
+
+      const slots = mod.getSlots(true); // فقط اسلات‌هایی با توکن
+      const slotInfo = [];
+
+      for (let i = 0; i < slots.length; i++) {
+        const slot = slots.items(i);
+        const token = slot.getToken();
+        slotInfo.push({
+          slotId: slot.handle,
+          description: slot.slotDescription,
+          tokenLabel: token.label,
+          tokenPresent: slot.flags & graphene.SlotFlag.TOKEN_PRESENT,
+        });
       }
+
+      return slotInfo;
     } catch (error) {
-      console.error('Error initializing token manager:', error);
-    }
-  }
-
-  setupUSBListeners() {
-    if (!this.usbEnabled || !usbModule) return;
-
-    try {
-      const usb = usbModule.usb || usbModule;
-      
-      if (typeof usb.on === 'function') {
-        usb.on('attach', (device) => this.handleDeviceConnect(device));
-        usb.on('detach', (device) => this.handleDeviceDisconnect(device));
-      }
-    } catch (error) {
-      console.error('Error setting up USB listeners:', error);
-    }
-  }
-
-  handleDeviceConnect(device) {
-    const { idVendor, idProduct } = device.deviceDescriptor;
-    const isAllowed = this.allowedTokens.some(
-      token => token.vendorId === idVendor && token.productId === idProduct
-    );
-
-    if (isAllowed) {
-      this.connectedTokens.add(`${idVendor}:${idProduct}`);
-      if (mainWindow) {
-        mainWindow.webContents.send('token-connected', { vendorId: idVendor, productId: idProduct });
-      }
-    }
-  }
-
-  handleDeviceDisconnect(device) {
-    const { idVendor, idProduct } = device.deviceDescriptor;
-    const tokenKey = `${idVendor}:${idProduct}`;
-    
-    if (this.connectedTokens.has(tokenKey)) {
-      this.connectedTokens.delete(tokenKey);
-      if (mainWindow) {
-        mainWindow.webContents.send('token-disconnected', { vendorId: idVendor, productId: idProduct });
-      }
-    }
-  }
-
-  isTokenConnected(vendorId, productId) {
-    return this.connectedTokens.has(`${vendorId}:${productId}`);
-  }
-
-  checkAllConnectedDevices() {
-    if (!this.usbEnabled || !usbModule) return [];
-
-    try {
-      const usb = usbModule.usb || usbModule;
-      const devices = usb.getDeviceList();
-      const connectedTokens = [];
-
-      devices.forEach(device => {
-        const { idVendor, idProduct } = device.deviceDescriptor;
-        const isAllowed = this.allowedTokens.some(
-          token => token.vendorId === idVendor && token.productId === idProduct
-        );
-
-        if (isAllowed) {
-          this.connectedTokens.add(`${idVendor}:${idProduct}`);
-          connectedTokens.push({ vendorId: idVendor, productId: idProduct });
+      console.error("خطا در لیست کردن اسلات‌ها:", error);
+      return [];
+    } finally {
+      if (mod) {
+        try {
+          mod.finalize();
+        } catch (e) {
+          /* ignore */
         }
+      }
+    }
+  }
+
+  // یافتن کلید بر اساس برچسب
+  async findPrivateKeyByLabel(session, label) {
+    const objects = session.find({
+      class: graphene.ObjectClass.PRIVATE_KEY,
+      label: label,
+    });
+
+    if (objects.length === 0) {
+      // تلاش برای یافتن با معیارهای مختلف
+      const allPrivateKeys = session.find({
+        class: graphene.ObjectClass.PRIVATE_KEY,
       });
 
-      return connectedTokens;
+      console.log(`تعداد کلیدهای خصوصی یافت شده: ${allPrivateKeys.length}`);
+
+      if (allPrivateKeys.length > 0) {
+        // استفاده از اولین کلید موجود
+        console.log("استفاده از اولین کلید خصوصی موجود");
+        return allPrivateKeys.items(0);
+      }
+
+      throw new Error(`کلید خصوصی با برچسب "${label}" یافت نشد`);
+    }
+
+    return objects.items(0);
+  }
+
+  async performTokenVerification(customPin = null) {
+    let session = null;
+    let mod = null;
+
+    try {
+      // اطمینان از اولیه سازی
+      await this.initialize();
+
+      console.log("شروع تایید توکن...");
+
+      // بارگذاری ماژول
+      mod = graphene.Module.load(this.availableDriverPath, "ShuttlePKCS11");
+      mod.initialize();
+      console.log("ماژول PKCS#11 بارگذاری شد");
+
+      // یافتن اسلات با توکن
+      const slots = mod.getSlots(true); // فقط اسلات‌های با توکن
+      if (slots.length === 0) {
+        throw new Error("هیچ توکنی یافت نشد. لطفاً توکن را متصل کنید.");
+      }
+
+      const slot = slots.items(0); // استفاده از اولین اسلات
+      console.log(`استفاده از اسلات: ${slot.slotDescription}`);
+
+      // باز کردن نشست
+      session = slot.open(
+        graphene.SessionFlag.RW_SESSION | graphene.SessionFlag.SERIAL_SESSION
+      );
+      console.log("نشست باز شد");
+
+      // ورود با PIN
+      const pin = customPin || CONFIG.DEFAULT_PIN;
+      console.log("تلاش برای ورود...");
+      session.login(pin);
+      console.log("ورود موفق");
+
+      // یافتن کلید خصوصی
+      const privateKey = await this.findPrivateKeyByLabel(
+        session,
+        CONFIG.KEY_LABEL
+      );
+      console.log("کلید خصوصی یافت شد");
+
+      // تولید داده تصادفی برای امضا
+      const challenge = randomBytes(256);
+      console.log("داده تصادفی تولید شد");
+
+      // امضای داده
+      const signature = session
+        .createSign(CONFIG.SIGNATURE_MECHANISM, privateKey)
+        .once(challenge);
+      console.log("امضا انجام شد");
+
+      // تایید امضا با کلید عمومی
+      const verify = createVerify("sha256");
+      verify.update(challenge);
+      verify.end();
+
+      const isValid = verify.verify(CONFIG.PUBLIC_KEY, signature);
+
+      if (!isValid) {
+        throw new Error(
+          "تایید امضا ناموفق بود. کلید روی توکن با کلید عمومی برنامه تطابق ندارد."
+        );
+      }
+
+      console.log("تایید امضا موفق");
+
+      const result = {
+        success: true,
+        message: "توکن با موفقیت تایید شد",
+        timestamp: new Date().toISOString(),
+      };
+
+      this.lastVerification = result;
+      if (mainWindow) {
+        mainWindow.webContents.send("token-verification-result", result);
+      }
+      return result;
     } catch (error) {
-      console.error('Error checking connected devices:', error);
-      return [];
+      console.error("خطا در تایید توکن:", error);
+
+      const friendlyMessage = this.getErrorMessage(error);
+      const result = {
+        success: false,
+        message: friendlyMessage,
+        details: error.message,
+        timestamp: new Date().toISOString(),
+      };
+
+      this.lastVerification = result;
+      if (mainWindow) {
+        mainWindow.webContents.send("token-verification-result", result);
+      }
+      return result;
+    } finally {
+      // پاکسازی منابع
+      if (session) {
+        try {
+          session.logout();
+          session.close();
+          console.log("نشست بسته شد");
+        } catch (e) {
+          console.log("خطا در بستن نشست:", e.message);
+        }
+      }
+      if (mod) {
+        try {
+          mod.finalize();
+          console.log("ماژول بسته شد");
+        } catch (e) {
+          console.log("خطا در بستن ماژول:", e.message);
+        }
+      }
     }
   }
 
-  addAllowedToken(vendorId, productId) {
-    const exists = this.allowedTokens.some(
-      token => token.vendorId === vendorId && token.productId === idProduct
-    );
-    if (!exists) {
-      this.allowedTokens.push({ vendorId, productId });
+  // ترجمه خطاها به پیام‌های دوستانه
+  getErrorMessage(error) {
+    // بررسی کدهای خطای PKCS#11
+    if (error.code) {
+      switch (error.code) {
+        case 0x000000a0: // CKR_PIN_INCORRECT
+          return "پین وارد شده اشتباه است.";
+        case 0x000000e0: // CKR_DEVICE_ERROR
+          return "خطا در ارتباط با دستگاه توکن. لطفاً آن را دوباره متصل کنید.";
+        case 0x000000e1: // CKR_TOKEN_NOT_PRESENT
+          return "توکن یافت نشد. لطفاً آن را متصل کنید.";
+        case 0x000000a1: // CKR_PIN_INVALID
+          return "پین نامعتبر است.";
+        case 0x000000a2: // CKR_PIN_LEN_RANGE
+          return "طول پین خارج از محدوده مجاز است.";
+        case 0x00000003: // CKR_SLOT_ID_INVALID
+          return "شناسه اسلات نامعتبر است.";
+        default:
+          return `خطای PKCS#11 با کد ${error.code.toString(16)}: ${
+            error.message
+          }`;
+      }
+    }
+
+    // بررسی پیام‌های خطای رایج
+    const message = error.message.toLowerCase();
+    if (message.includes("pin")) return "مشکل در پین توکن";
+    if (message.includes("token")) return "مشکل در توکن امنیتی";
+    if (message.includes("driver") || message.includes("library"))
+      return "مشکل در درایور توکن";
+    if (message.includes("slot")) return "مشکل در اسلات توکن";
+
+    return `خطای امنیتی: ${error.message}`;
+  }
+
+  getStatus() {
+    return {
+      lastVerification: this.lastVerification,
+      isInitialized: this.isInitialized,
+      driverPath: this.availableDriverPath,
+    };
+  }
+
+  // متد جدید برای تست درایور
+  async testDriver() {
+    try {
+      await this.initialize();
+      const slots = await this.listAvailableSlots();
+      return {
+        success: true,
+        driverPath: this.availableDriverPath,
+        slots: slots,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.message,
+      };
     }
   }
 }
 
-const tokenManager = new HardwareTokenManager();
+// ====================================================================
+// SECTION 3: MAIN APPLICATION LOGIC & WINDOWS
+// ====================================================================
+
+const tokenManager = new Pkcs11TokenManager();
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -291,301 +362,191 @@ function createWindow() {
     minWidth: 800,
     minHeight: 600,
     show: false,
-    icon: path.join(currentDir, 'assets', 'icon.png'),
+    icon: path.join(currentDir, "assets", "icon.png"),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      preload: path.join(currentDir, 'preload.js'),
+      preload: path.join(currentDir, "preload.js"),
       webSecurity: !app.isPackaged,
-      allowRunningInsecureContent: false
     },
   });
 
-  const isDev = !app.isPackaged && process.env.NODE_ENV !== 'production';
-
+  const isDev = !app.isPackaged && process.env.NODE_ENV !== "production";
   if (isDev) {
-    mainWindow.loadURL('http://localhost:5173');
+    mainWindow.loadURL("http://localhost:5173");
     mainWindow.webContents.openDevTools();
   } else {
-    mainWindow.loadFile(path.join(currentDir, 'dist', 'index.html'));
+    mainWindow.loadFile(path.join(currentDir, "dist", "index.html"));
   }
 
-  // CORS handling for development
-  if (isDev) {
-    mainWindow.webContents.session.webRequest.onBeforeSendHeaders((details, callback) => {
-      callback({ requestHeaders: details.requestHeaders });
-    });
-
-    mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
-      if (details.responseHeaders) {
-        details.responseHeaders['Access-Control-Allow-Origin'] = ['*'];
-        details.responseHeaders['Access-Control-Allow-Methods'] = ['GET, POST, PUT, DELETE, OPTIONS'];
-        details.responseHeaders['Access-Control-Allow-Headers'] = ['*'];
-      }
-      callback({ responseHeaders: details.responseHeaders });
-    });
-  }
-
-  mainWindow.once('ready-to-show', () => {
+  mainWindow.once("ready-to-show", () => {
     mainWindow.show();
     if (isDev) mainWindow.focus();
-
-    // Initial token check
-    setTimeout(() => {
-      const connectedTokens = tokenManager.checkAllConnectedDevices();
-      if (connectedTokens.length > 0) {
-        mainWindow.webContents.send('token-connected', connectedTokens[0]);
-      }
-    }, 1000);
-
-    // شروع فرآیند امضا و تایید بعد از لود شدن صفحه
-    setTimeout(() => {
-      signAndVerifyFile();
-    }, 2000);
   });
 
-  mainWindow.on('closed', () => {
+  mainWindow.on("closed", () => {
     mainWindow = null;
   });
 }
 
-// Menu
 function createMenu() {
   const template = [
     {
-      label: 'فایل',
+      label: "فایل",
       submenu: [
         {
-          label: 'باز کردن تصویر...',
-          accelerator: 'CmdOrCtrl+O',
+          label: "باز کردن تصویر...",
+          accelerator: "CmdOrCtrl+O",
           click: async () => {
             const result = await dialog.showOpenDialog(mainWindow, {
-              properties: ['openFile', 'multiSelections'],
-              filters: [{ name: 'تصاویر', extensions: ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'tiff'] }]
+              properties: ["openFile", "multiSelections"],
+              filters: [
+                {
+                  name: "تصاویر",
+                  extensions: [
+                    "jpg",
+                    "jpeg",
+                    "png",
+                    "gif",
+                    "bmp",
+                    "webp",
+                    "tiff",
+                  ],
+                },
+              ],
             });
-            if (!result.canceled) {
-              mainWindow.webContents.send('files-selected', result.filePaths);
-            }
-          }
+            if (!result.canceled)
+              mainWindow.webContents.send("files-selected", result.filePaths);
+          },
         },
-        { type: 'separator' },
+        { type: "separator" },
         {
-          label: 'تست امضای فایل',
-          click: () => {
-            signAndVerifyFile();
-          }
+          label: "تست توکن امنیتی",
+          click: () => tokenManager.performTokenVerification(),
         },
-        { type: 'separator' },
-        { label: 'خروج', accelerator: process.platform === 'darwin' ? 'Cmd+Q' : 'Ctrl+Q', click: () => app.quit() }
-      ]
-    }
+        {
+          label: "تست درایور",
+          click: async () => {
+            const result = await tokenManager.testDriver();
+            console.log("نتیجه تست درایور:", result);
+            dialog.showMessageBox(mainWindow, {
+              type: result.success ? "info" : "error",
+              title: "نتیجه تست درایور",
+              message: result.success
+                ? `درایور یافت شد: ${result.driverPath}\nتعداد اسلات: ${result.slots.length}`
+                : `خطا: ${result.error}`,
+            });
+          },
+        },
+        { type: "separator" },
+        { label: "خروج", role: "quit" },
+      ],
+    },
   ];
-
-  const menu = Menu.buildFromTemplate(template);
-  Menu.setApplicationMenu(menu);
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
-// IPC Handler for test123 command execution
-ipcMain.handle('run-test123-command', async (event, commandArgs = '') => {
-  return new Promise((resolve) => {
-    const fullCommand = commandArgs ? `/usr/local/bin/test123 ${commandArgs}` : '/usr/local/bin/test123 --help';
-    
-    const execOptions = {
-      env: { 
-        ...process.env, 
-        PATH: process.env.PATH + ':/usr/local/bin:/usr/bin:/bin' 
-      }
-    };
-    
-    exec(fullCommand, execOptions, (error, stdout, stderr) => {
-      if (error) {
-        resolve({ 
-          success: false, 
-          error: error.message, 
-          stdout: '', 
-          stderr,
-          command: fullCommand,
-          path: process.env.PATH 
-        });
-      } else {
-        resolve({ success: true, stdout, stderr, error: null });
-      }
-    });
-  });
-});
+// ====================================================================
+// SECTION 4: IPC HANDLERS (BACKEND FOR RENDERER)
+// ====================================================================
 
-// IPC Handler for manual sign and verify
-ipcMain.handle('sign-and-verify-file', async (event) => {
-  await signAndVerifyFile();
-  return { success: true };
-});
+// Token Handlers
+ipcMain.handle("check-token-status", () => ({
+  success: true,
+  data: tokenManager.getStatus(),
+}));
+ipcMain.handle("verify-token", (event, options = {}) =>
+  tokenManager.performTokenVerification(options.pin)
+);
+ipcMain.handle("test-driver", () => tokenManager.testDriver());
 
-// API Request Handler برای حل مشکل CORS
-ipcMain.handle('api-request', async (event, { url, method = 'GET', headers = {}, body = null }) => {
+// File System Handlers
+ipcMain.handle("create-file", async (event, fileName, content) => {
   try {
-    const fullUrl = url.startsWith('http') ? url : `http://192.168.88.69:8000${url}`;
-    
-    const request = net.request({
-      method,
-      url: fullUrl,
-      headers: {
-        'Content-Type': 'application/json',
-        ...headers
-      }
-    });
-
-    return new Promise((resolve, reject) => {
-      let responseData = '';
-
-      request.on('response', (response) => {
-        response.on('data', (chunk) => {
-          responseData += chunk;
-        });
-
-        response.on('end', () => {
-          try {
-            const data = responseData ? JSON.parse(responseData) : null;
-            resolve({ 
-              success: true, 
-              data, 
-              status: response.statusCode,
-              headers: response.headers 
-            });
-          } catch (error) {
-            resolve({ 
-              success: true, 
-              data: responseData, 
-              status: response.statusCode,
-              headers: response.headers 
-            });
-          }
-        });
-      });
-
-      request.on('error', (error) => {
-        resolve({ success: false, error: error.message });
-      });
-
-      if (body && method !== 'GET') {
-        request.write(typeof body === 'string' ? body : JSON.stringify(body));
-      }
-      request.end();
-    });
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
-// IPC Handlers
-ipcMain.handle('check-hardware-token', async (event, vendorId, productId) => {
-  try {
-    const isConnected = tokenManager.isTokenConnected(vendorId, productId);
-    return { success: true, connected: isConnected };
-  } catch (error) {
-    return { success: false, error: error.message, connected: false };
-  }
-});
-
-ipcMain.handle('request-token-access', async (event, vendorId, productId) => {
-  try {
-    tokenManager.addAllowedToken(vendorId, productId);
-    const connectedTokens = tokenManager.checkAllConnectedDevices();
-    const isConnected = tokenManager.isTokenConnected(vendorId, productId);
-    return { success: true, connected: isConnected };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
-// Image operations
-ipcMain.handle('select-image-files', async () => {
-  try {
-    const result = await dialog.showOpenDialog(mainWindow, {
-      properties: ['openFile', 'multiSelections'],
-      filters: [{ name: 'تصاویر', extensions: ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'tiff'] }]
-    });
-
-    if (!result.canceled) {
-      const fileData = await Promise.all(
-        result.filePaths.map(async (filePath) => {
-          const data = await fs.promises.readFile(filePath);
-          const stats = await fs.promises.stat(filePath);
-          return {
-            path: filePath,
-            name: path.basename(filePath),
-            size: stats.size,
-            data: data.toString('base64'),
-            mimeType: `image/${path.extname(filePath).slice(1)}`
-          };
-        })
-      );
-      return { success: true, files: fileData };
-    }
-    return { success: false, canceled: true };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle('compare-images', async (event, imageData) => {
-  // Mock data - replace with your backend API
-  const mockResult = {
-    success: true,
-    comparisons: imageData.map((img, index) => ({
-      imageId: index,
-      imageName: img.name || `Image ${index + 1}`,
-      similarities: [
-        { targetImage: 'Reference 1', percentage: Math.floor(Math.random() * 100) },
-        { targetImage: 'Reference 2', percentage: Math.floor(Math.random() * 100) }
-      ].sort((a, b) => b.percentage - a.percentage)
-    }))
-  };
-  return mockResult;
-});
-
-// File operations
-ipcMain.handle('create-file', async (event, fileName, content) => {
-  try {
-    const filePath = path.join(os.homedir(), 'Desktop', fileName);
-    await fs.promises.writeFile(filePath, content, 'utf8');
+    const filePath = path.join(os.homedir(), "Desktop", fileName);
+    await fs.writeFile(filePath, content, "utf8");
     return { success: true, path: filePath };
   } catch (error) {
     return { success: false, error: error.message };
   }
 });
 
-ipcMain.handle('read-file', async (event, filePath) => {
+ipcMain.handle("read-file", async (event, filePath) => {
   try {
-    const data = await fs.promises.readFile(filePath);
-    return { success: true, data: data };
+    const data = await fs.readFile(filePath);
+    return { success: true, data };
   } catch (error) {
     return { success: false, error: error.message };
   }
 });
 
-// System
-ipcMain.handle('get-system-info', async () => {
-  return {
-    success: true,
-    info: {
-      platform: process.platform,
-      arch: process.arch,
-      nodeVersion: process.versions.node,
-      electronVersion: process.versions.electron
-    }
-  };
-});
-
-ipcMain.handle('show-item-in-folder', async (event, fullPath) => {
+ipcMain.handle("select-image-files", async () => {
   try {
-    shell.showItemInFolder(fullPath);
-    return { success: true };
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ["openFile", "multiSelections"],
+      filters: [
+        {
+          name: "تصاویر",
+          extensions: ["jpg", "jpeg", "png", "gif", "bmp", "webp", "tiff"],
+        },
+      ],
+    });
+    if (result.canceled) return { success: false, canceled: true };
+    const fileData = await Promise.all(
+      result.filePaths.map(async (filePath) => {
+        const data = await fs.readFile(filePath);
+        const stats = await fs.stat(filePath);
+        return {
+          path: filePath,
+          name: path.basename(filePath),
+          size: stats.size,
+          data: data.toString("base64"),
+          mimeType: `image/${path.extname(filePath).slice(1)}`,
+        };
+      })
+    );
+    return { success: true, files: fileData };
   } catch (error) {
     return { success: false, error: error.message };
   }
 });
 
-ipcMain.handle('open-external', async (event, url) => {
+// Image Comparison (Mock) Handler
+ipcMain.handle("compare-images", async (event, imageData) => ({
+  success: true,
+  comparisons: imageData.map((img, index) => ({
+    imageId: index,
+    imageName: img.name || `Image ${index + 1}`,
+    similarities: [
+      {
+        targetImage: "Reference 1",
+        percentage: Math.floor(Math.random() * 100),
+      },
+      {
+        targetImage: "Reference 2",
+        percentage: Math.floor(Math.random() * 100),
+      },
+    ].sort((a, b) => b.percentage - a.percentage),
+  })),
+}));
+
+// System & Shell Handlers
+ipcMain.handle("get-system-info", () => ({
+  success: true,
+  info: {
+    platform: process.platform,
+    arch: process.arch,
+    nodeVersion: process.versions.node,
+    electronVersion: process.versions.electron,
+  },
+}));
+
+ipcMain.handle("show-item-in-folder", (event, fullPath) => {
+  shell.showItemInFolder(fullPath);
+  return { success: true };
+});
+
+ipcMain.handle("open-external", async (event, url) => {
   try {
     await shell.openExternal(url);
     return { success: true };
@@ -594,31 +555,98 @@ ipcMain.handle('open-external', async (event, url) => {
   }
 });
 
-// App initialization
-app.commandLine.appendSwitch('no-sandbox');
+// Network Handler
+ipcMain.handle(
+  "api-request",
+  async (event, { url, method = "GET", headers = {}, body = null }) => {
+    try {
+      const request = net.request({ method, url, headers });
+      return new Promise((resolve) => {
+        let responseData = "";
+        request.on("response", (response) => {
+          response.on("data", (chunk) => {
+            responseData += chunk;
+          });
+          response.on("end", () => {
+            try {
+              resolve({
+                success: true,
+                data: JSON.parse(responseData),
+                status: response.statusCode,
+                headers: response.headers,
+              });
+            } catch {
+              resolve({
+                success: true,
+                data: responseData,
+                status: response.statusCode,
+                headers: response.headers,
+              });
+            }
+          });
+        });
+        request.on("error", (error) =>
+          resolve({ success: false, error: error.message })
+        );
+        if (body && method !== "GET") request.write(JSON.stringify(body));
+        request.end();
+      });
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  }
+);
+
+// ====================================================================
+// SECTION 5: APPLICATION LIFECYCLE
+// ====================================================================
+
+app.commandLine.appendSwitch("no-sandbox");
 
 app.whenReady().then(async () => {
-  // Debug: نمایش PATH برای troubleshooting
-  console.log('Current PATH:', process.env.PATH);
-  
-  // بررسی وجود test123
-  exec('which test123', { env: { ...process.env, PATH: process.env.PATH + ':/usr/local/bin' } }, (error, stdout, stderr) => {
-    if (!error) {
-      console.log('Found test123 at:', stdout.trim());
-    } else {
-      console.log('test123 not found in PATH, trying direct access...');
+  console.log("شروع راه‌اندازی برنامه...");
+
+  try {
+    // ابتدا درایور را تست کنید
+    const driverTest = await tokenManager.testDriver();
+    if (!driverTest.success) {
+      console.error("تست درایور ناموفق:", driverTest.error);
+      dialog.showErrorBox(
+        "خطای درایور",
+        `درایور PKCS#11 یافت نشد:\n${driverTest.error}`
+      );
+      app.quit();
+      return;
     }
-  });
 
-  await tokenManager.initialize();
-  createWindow();
-  createMenu();
+    console.log("درایور یافت شد، شروع تایید اولیه توکن...");
+    const initialResult = await tokenManager.performTokenVerification();
+
+    if (initialResult.success) {
+      console.log("تایید اولیه موفق. ایجاد پنجره اصلی...");
+      createWindow();
+      createMenu();
+      app.on("activate", () => {
+        if (BrowserWindow.getAllWindows().length === 0) createWindow();
+      });
+    } else {
+      console.error("تایید اولیه ناموفق:", initialResult.message);
+      dialog.showErrorBox(
+        "خطای دسترسی",
+        `توکن امنیتی معتبر یافت نشد.\n\nجزئیات: ${initialResult.message}`
+      );
+      app.quit();
+    }
+  } catch (error) {
+    console.error("خطای بحرانی در راه‌اندازی:", error);
+    dialog.showErrorBox(
+      "خطای بحرانی",
+      `خطا در راه‌اندازی برنامه:\n${error.message}`
+    );
+    app.quit();
+  }
 });
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
-});
-
-app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) createWindow();
+app.on("window-all-closed", () => {
+  if (process.platform !== "darwin") app.quit();
 });

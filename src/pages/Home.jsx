@@ -4,8 +4,8 @@ export default function ImageSimilaritySearch() {
   const [selectedImage, setSelectedImage] = useState(null);
   const [searchResults, setSearchResults] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [apiUrl, setApiUrl] = useState('http://192.168.88.69:8000');
-  const [aiApiUrl, setAiApiUrl] = useState('http://192.168.88.69:11434');
+  const [apiUrl, setApiUrl] = useState('http://192.168.1.101:8000');
+  const [aiApiUrl, setAiApiUrl] = useState('http://192.168.1.101:11434');
   const [threshold, setThreshold] = useState(50);
   const [maxResults, setMaxResults] = useState(10);
   const [dragOver, setDragOver] = useState(false);

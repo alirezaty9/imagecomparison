@@ -5,7 +5,7 @@ export default function ImageComparison() {
   const [image2, setImage2] = useState(null);
   const [comparisonResult, setComparisonResult] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [apiUrl, setApiUrl] = useState('http://192.168.88.69:8000');
+  const [apiUrl, setApiUrl] = useState('http://192.168.1.101:8000');
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
   const [connectionStatus, setConnectionStatus] = useState('checking');
@@ -19,15 +19,42 @@ export default function ImageComparison() {
   }, []);
 
   const loadSettings = () => {
-    if (window.storage) {
-      const settings = window.storage.get('appSettings', {});
-      if (settings.apiUrl) setApiUrl(settings.apiUrl);
+    try {
+      // استفاده از localStorage به جای window.storage
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const savedSettings = localStorage.getItem('appSettings');
+        if (savedSettings) {
+          const settings = JSON.parse(savedSettings);
+          if (settings.apiUrl) {
+            setApiUrl(settings.apiUrl);
+          }
+        }
+      }
+      // اگر storage API وجود داشت، از آن استفاده کن
+      else if (typeof window !== 'undefined' && window.storage && typeof window.storage.get === 'function') {
+        const settings = window.storage.get('appSettings', {});
+        if (settings && settings.apiUrl) {
+          setApiUrl(settings.apiUrl);
+        }
+      }
+    } catch (error) {
+      console.warn('Error loading settings:', error);
+      // در صورت خطا، از مقدار پیش‌فرض استفاده می‌کنیم
     }
   };
 
   const saveSettings = () => {
-    if (window.storage) {
-      window.storage.set('appSettings', { apiUrl });
+    try {
+      // استفاده از localStorage به جای window.storage
+      if (typeof window !== 'undefined' && window.localStorage) {
+        localStorage.setItem('appSettings', JSON.stringify({ apiUrl }));
+      }
+      // اگر storage API وجود داشت، از آن هم استفاده کن
+      else if (typeof window !== 'undefined' && window.storage && typeof window.storage.set === 'function') {
+        window.storage.set('appSettings', { apiUrl });
+      }
+    } catch (error) {
+      console.warn('Error saving settings:', error);
     }
   };
 
@@ -122,7 +149,7 @@ export default function ImageComparison() {
   // Open file dialog using Electron
   const openFileDialog = async (imageSlot) => {
     try {
-      if (window.electronAPI) {
+      if (typeof window !== 'undefined' && window.electronAPI && typeof window.electronAPI.selectImageFiles === 'function') {
         const result = await window.electronAPI.selectImageFiles();
         
         if (result.success && result.files && result.files.length > 0) {
@@ -148,7 +175,10 @@ export default function ImageComparison() {
         }
       } else {
         // Web fallback
-        document.getElementById(`${imageSlot}Input`).click();
+        const input = document.getElementById(`${imageSlot}Input`);
+        if (input) {
+          input.click();
+        }
       }
     } catch (error) {
       setError('خطا در انتخاب فایل. لطفاً دوباره تلاش کنید.');
@@ -176,7 +206,7 @@ export default function ImageComparison() {
       const formData = new FormData();
       
       // Handle first image
-      if (image1.file.data) {
+      if (image1.file && image1.file.data) {
         // Convert base64 to blob (from Electron)
         const base64Data = image1.file.data;
         const byteCharacters = atob(base64Data);
@@ -192,7 +222,7 @@ export default function ImageComparison() {
       }
 
       // Handle second image
-      if (image2.file.data) {
+      if (image2.file && image2.file.data) {
         // Convert base64 to blob (from Electron)
         const base64Data = image2.file.data;
         const byteCharacters = atob(base64Data);

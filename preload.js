@@ -1,52 +1,84 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
-console.log('Preload script loaded');
-
-// فقط API های ضروری
 const electronAPI = {
-  // File operations
+  // Token Operations
+  checkTokenStatus: () => ipcRenderer.invoke('check-token-status'),
+  verifyToken: (options) => ipcRenderer.invoke('verify-token', options),
+  
+  // Legacy Support
+  checkHardwareToken: (vendorId, productId) => ipcRenderer.invoke('check-token-status'),
+  requestTokenAccess: (vendorId, productId) => ipcRenderer.invoke('verify-token'),
+  signAndVerifyFile: (options) => ipcRenderer.invoke('verify-token', options),
+
+  // File Operations
   createFile: (fileName, content) => ipcRenderer.invoke('create-file', fileName, content),
   readFile: (filePath) => ipcRenderer.invoke('read-file', filePath),
-  saveFileDialog: (data, filters) => ipcRenderer.invoke('save-file-dialog', data, filters),
-  
-  // Image operations
   selectImageFiles: () => ipcRenderer.invoke('select-image-files'),
   compareImages: (imageData) => ipcRenderer.invoke('compare-images', imageData),
-  
-  // System
+
+  // System Operations
   getSystemInfo: () => ipcRenderer.invoke('get-system-info'),
   showItemInFolder: (fullPath) => ipcRenderer.invoke('show-item-in-folder', fullPath),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
 
-  // Hardware Token (فقط برای TokenGuard)
-  checkHardwareToken: (vendorId, productId) => ipcRenderer.invoke('check-hardware-token', vendorId, productId),
-  requestTokenAccess: (vendorId, productId) => ipcRenderer.invoke('request-token-access', vendorId, productId),
-  
-  // API Request Handler - برای حل مشکل CORS
-  apiRequest: (options) => ipcRenderer.invoke('api-request', options),
-  
-  // Shell Command Execution
-  executeShellCommand: (command, options) => ipcRenderer.invoke('execute-shell-command', command, options),
-  verifyPkcs11Signature: (options) => ipcRenderer.invoke('verify-pkcs11-signature', options),
-  
-  // Test123 operations
+  // Command Execution
   runTest123Command: (args) => ipcRenderer.invoke('run-test123-command', args),
-  signAndVerifyFile: () => ipcRenderer.invoke('sign-and-verify-file'),
+
+  // Network Operations
+  apiRequest: (options) => ipcRenderer.invoke('api-request', options),
+
+  // Event Listeners
+  onTokenVerificationResult: (callback) => {
+    const handler = (event, ...args) => callback(event, ...args);
+    ipcRenderer.on('token-verification-result', handler);
+    return () => ipcRenderer.removeListener('token-verification-result', handler);
+  },
+
+  // Legacy Event Listeners
+  onTokenConnected: (callback) => {
+    const handler = (event, ...args) => callback(event, ...args);
+    ipcRenderer.on('token-verification-result', (event, result) => {
+      if (result.success) {
+        callback(event, { connected: true, timestamp: new Date() });
+      }
+    });
+    return () => ipcRenderer.removeListener('token-verification-result', handler);
+  },
   
-  // Event listeners
-  onFilesSelected: (callback) => ipcRenderer.on('files-selected', callback),
-  onTokenConnected: (callback) => ipcRenderer.on('token-connected', callback),
-  onTokenDisconnected: (callback) => ipcRenderer.on('token-disconnected', callback),
-  onCommandLog: (callback) => ipcRenderer.on('command-log', callback),
-  onFileSignResult: (callback) => ipcRenderer.on('file-sign-result', callback),
+  onTokenDisconnected: (callback) => {
+    const handler = (event, ...args) => callback(event, ...args);
+    ipcRenderer.on('token-verification-result', (event, result) => {
+      if (!result.success) {
+        callback(event, { connected: false, timestamp: new Date() });
+      }
+    });
+    return () => ipcRenderer.removeListener('token-verification-result', handler);
+  },
+
+  onFileSignResult: (callback) => {
+    const handler = (event, ...args) => callback(event, ...args);
+    ipcRenderer.on('token-verification-result', handler);
+    return () => ipcRenderer.removeListener('token-verification-result', handler);
+  },
+  
+  onFilesSelected: (callback) => {
+    const handler = (event, ...args) => callback(event, ...args);
+    ipcRenderer.on('files-selected', handler);
+    return () => ipcRenderer.removeListener('files-selected', handler);
+  },
+  
+  onCommandLog: (callback) => {
+    const handler = (event, ...args) => callback(event, ...args);
+    ipcRenderer.on('command-log', handler);
+    return () => ipcRenderer.removeListener('command-log', handler);
+  },
+
+  // Utility
   removeAllListeners: (channel) => ipcRenderer.removeAllListeners(channel)
 };
 
-// Expose to window
-contextBridge.exposeInMainWorld('electronAPI', electronAPI);
-
-// Enhanced fetch wrapper که از electronAPI استفاده می‌کند
-contextBridge.exposeInMainWorld('electronFetch', async (url, options = {}) => {
+// Network Wrapper
+const electronFetch = async (url, options = {}) => {
   try {
     const result = await electronAPI.apiRequest({
       url,
@@ -59,20 +91,23 @@ contextBridge.exposeInMainWorld('electronFetch', async (url, options = {}) => {
       return {
         ok: result.status >= 200 && result.status < 300,
         status: result.status,
+        statusText: result.status >= 200 && result.status < 300 ? 'OK' : 'Error',
         headers: result.headers,
         json: async () => result.data,
-        text: async () => typeof result.data === 'string' ? result.data : JSON.stringify(result.data)
+        text: async () => typeof result.data === 'string' ? result.data : JSON.stringify(result.data),
+        blob: async () => new Blob([JSON.stringify(result.data)], { type: 'application/json' })
       };
     } else {
-      throw new Error(result.error);
+      throw new Error(result.error || 'Network request failed');
     }
   } catch (error) {
+    console.error('Network request failed:', error.message);
     throw error;
   }
-});
+};
 
-// File system API
-contextBridge.exposeInMainWorld('fs', {
+// File System API
+const fileSystemAPI = {
   readFile: async (fileName, options = {}) => {
     try {
       if (fileName && typeof fileName === 'object' && fileName.name) {
@@ -85,7 +120,7 @@ contextBridge.exposeInMainWorld('fs', {
               resolve(new Uint8Array(reader.result));
             }
           };
-          reader.onerror = reject;
+          reader.onerror = () => reject(new Error('File reading failed'));
           
           if (options.encoding === 'utf8') {
             reader.readAsText(fileName);
@@ -96,10 +131,10 @@ contextBridge.exposeInMainWorld('fs', {
       }
       
       if (typeof fileName === 'string') {
-        const result = await window.electronAPI.readFile(fileName);
+        const result = await electronAPI.readFile(fileName);
         if (result.success) {
           if (options.encoding === 'utf8') {
-            return result.data.toString('utf8');
+            return Buffer.from(result.data).toString('utf8');
           } else {
             return new Uint8Array(result.data);
           }
@@ -110,50 +145,32 @@ contextBridge.exposeInMainWorld('fs', {
       
       throw new Error('Invalid file parameter');
     } catch (error) {
-      throw error;
-    }
-  }
-});
-
-// Shell API
-contextBridge.exposeInMainWorld('shell', {
-  execute: async (command, options = {}) => {
-    try {
-      return await electronAPI.executeShellCommand(command, options);
-    } catch (error) {
+      console.error('File system error:', error.message);
       throw error;
     }
   },
-  
-  verifyPkcs11: async (options = {}) => {
+
+  writeFile: async (fileName, content) => {
     try {
-      return await electronAPI.verifyPkcs11Signature(options);
+      const result = await electronAPI.createFile(fileName, content);
+      if (!result.success) {
+        throw new Error(result.error);
+      }
+      return result;
     } catch (error) {
+      console.error('File write error:', error.message);
       throw error;
     }
   }
-});
+};
 
-// Command Logger
-contextBridge.exposeInMainWorld('commandLogger', {
-  onLog: (callback) => {
-    electronAPI.onCommandLog((event, log) => {
-      callback(log);
-    });
-  },
-  
-  removeListeners: () => {
-    electronAPI.removeAllListeners('command-log');
-  }
-});
-
-// Image utilities
-contextBridge.exposeInMainWorld('imageUtils', {
+// Image Utilities
+const imageUtilities = {
   fileToBase64: (file) => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => resolve(reader.result);
-      reader.onerror = reject;
+      reader.onerror = () => reject(new Error('Base64 conversion failed'));
       reader.readAsDataURL(file);
     });
   },
@@ -161,33 +178,44 @@ contextBridge.exposeInMainWorld('imageUtils', {
   getImageDimensions: (imageSrc) => {
     return new Promise((resolve, reject) => {
       const img = new Image();
-      img.onload = () => resolve({ width: img.width, height: img.height });
-      img.onerror = reject;
+      img.onload = () => resolve({ 
+        width: img.width, 
+        height: img.height,
+        aspectRatio: img.width / img.height
+      });
+      img.onerror = () => reject(new Error('Image dimensions calculation failed'));
       img.src = imageSrc;
     });
   },
   
   validateImageFile: (file) => {
-    const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/bmp', 'image/webp', 'image/tiff'];
-    const maxSize = 50 * 1024 * 1024; // 50MB
+    const validTypes = [
+      'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 
+      'image/bmp', 'image/webp', 'image/tiff', 'image/svg+xml'
+    ];
+    const maxSize = 50 * 1024 * 1024;
     
     return {
       isValid: validTypes.includes(file.type) && file.size <= maxSize,
       type: file.type,
       size: file.size,
       sizeInMB: (file.size / (1024 * 1024)).toFixed(2),
-      name: file.name
+      name: file.name,
+      maxSizeExceeded: file.size > maxSize,
+      unsupportedType: !validTypes.includes(file.type)
     };
   }
-});
+};
 
-// Storage utilities
-contextBridge.exposeInMainWorld('storage', {
+// Storage Utilities
+const storageUtilities = {
   set: (key, value) => {
     try {
-      localStorage.setItem(key, JSON.stringify(value));
+      const serialized = JSON.stringify({ value, timestamp: Date.now(), type: typeof value });
+      localStorage.setItem(key, serialized);
       return true;
     } catch (error) {
+      console.error('Storage set error:', error.message);
       return false;
     }
   },
@@ -195,8 +223,12 @@ contextBridge.exposeInMainWorld('storage', {
   get: (key, defaultValue = null) => {
     try {
       const item = localStorage.getItem(key);
-      return item ? JSON.parse(item) : defaultValue;
+      if (!item) return defaultValue;
+      
+      const parsed = JSON.parse(item);
+      return parsed.value;
     } catch (error) {
+      console.error('Storage get error:', error.message);
       return defaultValue;
     }
   },
@@ -206,6 +238,7 @@ contextBridge.exposeInMainWorld('storage', {
       localStorage.removeItem(key);
       return true;
     } catch (error) {
+      console.error('Storage remove error:', error.message);
       return false;
     }
   },
@@ -215,9 +248,15 @@ contextBridge.exposeInMainWorld('storage', {
       localStorage.clear();
       return true;
     } catch (error) {
+      console.error('Storage clear error:', error.message);
       return false;
     }
   }
-});
+};
 
-console.log('APIs exposed successfully');
+// Expose APIs
+contextBridge.exposeInMainWorld('electronAPI', electronAPI);
+contextBridge.exposeInMainWorld('electronFetch', electronFetch);
+contextBridge.exposeInMainWorld('fs', fileSystemAPI);
+contextBridge.exposeInMainWorld('imageUtils', imageUtilities);
+contextBridge.exposeInMainWorld('storage', storageUtilities);
