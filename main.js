@@ -12,7 +12,16 @@ import { fileURLToPath } from "url";
 import fs from "fs/promises";
 import os from "os";
 import { randomBytes, createVerify } from "crypto";
-import * as graphene from "graphene-pk11";
+import { exec } from "node:child_process";
+import FormData from 'form-data';
+
+// Conditional import for PKCS#11
+let graphene = null;
+try {
+  graphene = await import("graphene-pk11");
+} catch (error) {
+  console.warn("PKCS#11 library not available:", error.message);
+}
 
 // ====================================================================
 // SECTION 1: SETUP & CONFIGURATION
@@ -21,28 +30,38 @@ import * as graphene from "graphene-pk11";
 const currentFile = fileURLToPath(import.meta.url);
 const currentDir = path.dirname(currentFile);
 let mainWindow = null;
+let usbModule = null;
+
+// Initialize USB module
+async function initializeUSB() {
+  try {
+    const usbImport = await import('usb');
+    usbModule = usbImport.default || usbImport.usb || usbImport;
+    console.log('USB module loaded successfully');
+    return true;
+  } catch (error) {
+    console.warn('USB module not available:', error.message);
+    return false;
+  }
+}
 
 // تشخیص مسیر درایور بر اساس پلتفرم
 const getDriverPath = () => {
   switch (process.platform) {
     case "win32":
-      // مسیرهای محتمل برای ویندوز
       return [
         "C:\\Windows\\System32\\shuttle_p11.dll",
         "C:\\Program Files\\ShuttleCSP\\shuttle_p11.dll",
         "C:\\Program Files (x86)\\ShuttleCSP\\shuttle_p11.dll",
       ];
-   // main.js
-
-case "linux":
-  return [
-    // مسیر جدید را در ابتدا اضافه کنید
-    path.join(currentDir, "Token", "lib", "libshuttle_p11v220.so.1.0.0"),
-    "/usr/local/lib/libshuttle_p11v220.so",
-    "/usr/lib/libshuttle_p11v220.so",
-    "/lib/libshuttle_p11v220.so",
-  ];
-    case "darwin": // macOS
+    case "linux":
+      return [
+        path.join(currentDir, "Token", "lib", "libshuttle_p11v220.so.1.0.0"),
+        "/usr/local/lib/libshuttle_p11v220.so",
+        "/usr/lib/libshuttle_p11v220.so",
+        "/lib/libshuttle_p11v220.so",
+      ];
+    case "darwin":
       return [
         "/usr/local/lib/libshuttle_p11v220.dylib",
         "/Library/Frameworks/ShuttleCSP.framework/ShuttleCSP",
@@ -63,10 +82,9 @@ g5gHVPjlusE7WNvv1eTbhMW2BKBBqj9fj4gwFZ4+sFlOtEu5g6JD/EBRO+uqa4n9
 wjRxJpTXfmb4SiL0M5uCjftVgvVpaANi79sgyO8W9floMcuks9yX3p044HxAgB+R
 EwIDAQAB
 -----END PUBLIC KEY-----`,
-
   KEY_LABEL: "ImageCompareKey",
   DEFAULT_PIN: process.env.TOKEN_PIN || "1234",
-  SIGNATURE_MECHANISM: "SHA256_RSA_PKCS", // مکانیزم امضا
+  SIGNATURE_MECHANISM: "SHA256_RSA_PKCS",
 };
 
 // ====================================================================
@@ -80,7 +98,6 @@ class Pkcs11TokenManager {
     this.isInitialized = false;
   }
 
-  // یافتن درایور موجود در سیستم
   async findAvailableDriver() {
     for (const driverPath of CONFIG.DRIVER_PATHS) {
       try {
@@ -95,9 +112,12 @@ class Pkcs11TokenManager {
     throw new Error("هیچ درایور PKCS#11 معتبری در سیستم یافت نشد");
   }
 
-  // اولیه سازی ماژول
   async initialize() {
     if (this.isInitialized) return;
+
+    if (!graphene) {
+      throw new Error("PKCS#11 library not available");
+    }
 
     if (!this.availableDriverPath) {
       await this.findAvailableDriver();
@@ -107,14 +127,17 @@ class Pkcs11TokenManager {
     console.log("PKCS#11 Manager آماده شد");
   }
 
-  // لیست کردن اسلات‌های موجود (برای دیباگ)
   async listAvailableSlots() {
     let mod = null;
     try {
+      if (!graphene) {
+        return [];
+      }
+
       mod = graphene.Module.load(this.availableDriverPath, "ShuttlePKCS11");
       mod.initialize();
 
-      const slots = mod.getSlots(true); // فقط اسلات‌هایی با توکن
+      const slots = mod.getSlots(true);
       const slotInfo = [];
 
       for (let i = 0; i < slots.length; i++) {
@@ -143,7 +166,6 @@ class Pkcs11TokenManager {
     }
   }
 
-  // یافتن کلید بر اساس برچسب
   async findPrivateKeyByLabel(session, label) {
     const objects = session.find({
       class: graphene.ObjectClass.PRIVATE_KEY,
@@ -151,7 +173,6 @@ class Pkcs11TokenManager {
     });
 
     if (objects.length === 0) {
-      // تلاش برای یافتن با معیارهای مختلف
       const allPrivateKeys = session.find({
         class: graphene.ObjectClass.PRIVATE_KEY,
       });
@@ -159,7 +180,6 @@ class Pkcs11TokenManager {
       console.log(`تعداد کلیدهای خصوصی یافت شده: ${allPrivateKeys.length}`);
 
       if (allPrivateKeys.length > 0) {
-        // استفاده از اولین کلید موجود
         console.log("استفاده از اولین کلید خصوصی موجود");
         return allPrivateKeys.items(0);
       }
@@ -175,55 +195,49 @@ class Pkcs11TokenManager {
     let mod = null;
 
     try {
-      // اطمینان از اولیه سازی
       await this.initialize();
-
       console.log("شروع تایید توکن...");
 
-      // بارگذاری ماژول
+      if (!graphene) {
+        throw new Error("PKCS#11 library not available");
+      }
+
       mod = graphene.Module.load(this.availableDriverPath, "ShuttlePKCS11");
       mod.initialize();
       console.log("ماژول PKCS#11 بارگذاری شد");
 
-      // یافتن اسلات با توکن
-      const slots = mod.getSlots(true); // فقط اسلات‌های با توکن
+      const slots = mod.getSlots(true);
       if (slots.length === 0) {
         throw new Error("هیچ توکنی یافت نشد. لطفاً توکن را متصل کنید.");
       }
 
-      const slot = slots.items(0); // استفاده از اولین اسلات
+      const slot = slots.items(0);
       console.log(`استفاده از اسلات: ${slot.slotDescription}`);
 
-      // باز کردن نشست
       session = slot.open(
         graphene.SessionFlag.RW_SESSION | graphene.SessionFlag.SERIAL_SESSION
       );
       console.log("نشست باز شد");
 
-      // ورود با PIN
       const pin = customPin || CONFIG.DEFAULT_PIN;
       console.log("تلاش برای ورود...");
       session.login(pin);
       console.log("ورود موفق");
 
-      // یافتن کلید خصوصی
       const privateKey = await this.findPrivateKeyByLabel(
         session,
         CONFIG.KEY_LABEL
       );
       console.log("کلید خصوصی یافت شد");
 
-      // تولید داده تصادفی برای امضا
       const challenge = randomBytes(256);
       console.log("داده تصادفی تولید شد");
 
-      // امضای داده
       const signature = session
         .createSign(CONFIG.SIGNATURE_MECHANISM, privateKey)
         .once(challenge);
       console.log("امضا انجام شد");
 
-      // تایید امضا با کلید عمومی
       const verify = createVerify("sha256");
       verify.update(challenge);
       verify.end();
@@ -242,6 +256,11 @@ class Pkcs11TokenManager {
         success: true,
         message: "توکن با موفقیت تایید شد",
         timestamp: new Date().toISOString(),
+        details: {
+          challengeSize: challenge.length,
+          signatureSize: signature.length,
+          publicKeyMatch: true,
+        }
       };
 
       this.lastVerification = result;
@@ -266,7 +285,6 @@ class Pkcs11TokenManager {
       }
       return result;
     } finally {
-      // پاکسازی منابع
       if (session) {
         try {
           session.logout();
@@ -287,31 +305,26 @@ class Pkcs11TokenManager {
     }
   }
 
-  // ترجمه خطاها به پیام‌های دوستانه
   getErrorMessage(error) {
-    // بررسی کدهای خطای PKCS#11
     if (error.code) {
       switch (error.code) {
-        case 0x000000a0: // CKR_PIN_INCORRECT
+        case 0x000000a0:
           return "پین وارد شده اشتباه است.";
-        case 0x000000e0: // CKR_DEVICE_ERROR
+        case 0x000000e0:
           return "خطا در ارتباط با دستگاه توکن. لطفاً آن را دوباره متصل کنید.";
-        case 0x000000e1: // CKR_TOKEN_NOT_PRESENT
+        case 0x000000e1:
           return "توکن یافت نشد. لطفاً آن را متصل کنید.";
-        case 0x000000a1: // CKR_PIN_INVALID
+        case 0x000000a1:
           return "پین نامعتبر است.";
-        case 0x000000a2: // CKR_PIN_LEN_RANGE
+        case 0x000000a2:
           return "طول پین خارج از محدوده مجاز است.";
-        case 0x00000003: // CKR_SLOT_ID_INVALID
+        case 0x00000003:
           return "شناسه اسلات نامعتبر است.";
         default:
-          return `خطای PKCS#11 با کد ${error.code.toString(16)}: ${
-            error.message
-          }`;
+          return `خطای PKCS#11 با کد ${error.code.toString(16)}: ${error.message}`;
       }
     }
 
-    // بررسی پیام‌های خطای رایج
     const message = error.message.toLowerCase();
     if (message.includes("pin")) return "مشکل در پین توکن";
     if (message.includes("token")) return "مشکل در توکن امنیتی";
@@ -327,10 +340,10 @@ class Pkcs11TokenManager {
       lastVerification: this.lastVerification,
       isInitialized: this.isInitialized,
       driverPath: this.availableDriverPath,
+      grapheneAvailable: !!graphene,
     };
   }
 
-  // متد جدید برای تست درایور
   async testDriver() {
     try {
       await this.initialize();
@@ -350,10 +363,108 @@ class Pkcs11TokenManager {
 }
 
 // ====================================================================
-// SECTION 3: MAIN APPLICATION LOGIC & WINDOWS
+// SECTION 3: HARDWARE TOKEN MANAGER (USB Detection)
+// ====================================================================
+
+class HardwareTokenManager {
+  constructor() {
+    this.connectedTokens = new Set();
+    this.allowedTokens = [
+      { vendorId: 0x096e, productId: 0x0703 } // Feitian token
+    ];
+    this.usbEnabled = false;
+  }
+
+  async initialize() {
+    try {
+      this.usbEnabled = await initializeUSB();
+      if (this.usbEnabled) {
+        this.setupUSBListeners();
+      }
+    } catch (error) {
+      console.error('Error initializing USB token manager:', error);
+    }
+  }
+
+  setupUSBListeners() {
+    if (!this.usbEnabled || !usbModule) return;
+
+    try {
+      const usb = usbModule.usb || usbModule;
+      
+      if (typeof usb.on === 'function') {
+        usb.on('attach', (device) => this.handleDeviceConnect(device));
+        usb.on('detach', (device) => this.handleDeviceDisconnect(device));
+      }
+    } catch (error) {
+      console.error('Error setting up USB listeners:', error);
+    }
+  }
+
+  handleDeviceConnect(device) {
+    const { idVendor, idProduct } = device.deviceDescriptor;
+    const isAllowed = this.allowedTokens.some(
+      token => token.vendorId === idVendor && token.productId === idProduct
+    );
+
+    if (isAllowed) {
+      this.connectedTokens.add(`${idVendor}:${idProduct}`);
+      if (mainWindow) {
+        mainWindow.webContents.send('token-connected', { vendorId: idVendor, productId: idProduct });
+      }
+    }
+  }
+
+  handleDeviceDisconnect(device) {
+    const { idVendor, idProduct } = device.deviceDescriptor;
+    const tokenKey = `${idVendor}:${idProduct}`;
+    
+    if (this.connectedTokens.has(tokenKey)) {
+      this.connectedTokens.delete(tokenKey);
+      if (mainWindow) {
+        mainWindow.webContents.send('token-disconnected', { vendorId: idVendor, productId: idProduct });
+      }
+    }
+  }
+
+  isTokenConnected(vendorId, productId) {
+    return this.connectedTokens.has(`${vendorId}:${productId}`);
+  }
+
+  checkAllConnectedDevices() {
+    if (!this.usbEnabled || !usbModule) return [];
+
+    try {
+      const usb = usbModule.usb || usbModule;
+      const devices = usb.getDeviceList();
+      const connectedTokens = [];
+
+      devices.forEach(device => {
+        const { idVendor, idProduct } = device.deviceDescriptor;
+        const isAllowed = this.allowedTokens.some(
+          token => token.vendorId === idVendor && token.productId === idProduct
+        );
+
+        if (isAllowed) {
+          this.connectedTokens.add(`${idVendor}:${idProduct}`);
+          connectedTokens.push({ vendorId: idVendor, productId: idProduct });
+        }
+      });
+
+      return connectedTokens;
+    } catch (error) {
+      console.error('Error checking connected devices:', error);
+      return [];
+    }
+  }
+}
+
+// ====================================================================
+// SECTION 4: WINDOW & APP INITIALIZATION
 // ====================================================================
 
 const tokenManager = new Pkcs11TokenManager();
+const hardwareTokenManager = new HardwareTokenManager();
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -368,10 +479,12 @@ function createWindow() {
       contextIsolation: true,
       preload: path.join(currentDir, "preload.js"),
       webSecurity: !app.isPackaged,
+      allowRunningInsecureContent: false
     },
   });
 
   const isDev = !app.isPackaged && process.env.NODE_ENV !== "production";
+
   if (isDev) {
     mainWindow.loadURL("http://localhost:5173");
     mainWindow.webContents.openDevTools();
@@ -379,9 +492,33 @@ function createWindow() {
     mainWindow.loadFile(path.join(currentDir, "dist", "index.html"));
   }
 
+  // CORS handling for development
+  if (isDev) {
+    mainWindow.webContents.session.webRequest.onBeforeSendHeaders((details, callback) => {
+      callback({ requestHeaders: details.requestHeaders });
+    });
+
+    mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+      if (details.responseHeaders) {
+        details.responseHeaders['Access-Control-Allow-Origin'] = ['*'];
+        details.responseHeaders['Access-Control-Allow-Methods'] = ['GET, POST, PUT, DELETE, OPTIONS'];
+        details.responseHeaders['Access-Control-Allow-Headers'] = ['*'];
+      }
+      callback({ responseHeaders: details.responseHeaders });
+    });
+  }
+
   mainWindow.once("ready-to-show", () => {
     mainWindow.show();
     if (isDev) mainWindow.focus();
+
+    // Initial hardware token check
+    setTimeout(() => {
+      const connectedTokens = hardwareTokenManager.checkAllConnectedDevices();
+      if (connectedTokens.length > 0) {
+        mainWindow.webContents.send('token-connected', connectedTokens[0]);
+      }
+    }, 1000);
   });
 
   mainWindow.on("closed", () => {
@@ -403,15 +540,7 @@ function createMenu() {
               filters: [
                 {
                   name: "تصاویر",
-                  extensions: [
-                    "jpg",
-                    "jpeg",
-                    "png",
-                    "gif",
-                    "bmp",
-                    "webp",
-                    "tiff",
-                  ],
+                  extensions: ["jpg", "jpeg", "png", "gif", "bmp", "webp", "tiff"],
                 },
               ],
             });
@@ -447,7 +576,7 @@ function createMenu() {
 }
 
 // ====================================================================
-// SECTION 4: IPC HANDLERS (BACKEND FOR RENDERER)
+// SECTION 5: IPC HANDLERS
 // ====================================================================
 
 // Token Handlers
@@ -455,10 +584,36 @@ ipcMain.handle("check-token-status", () => ({
   success: true,
   data: tokenManager.getStatus(),
 }));
+
 ipcMain.handle("verify-token", (event, options = {}) =>
   tokenManager.performTokenVerification(options.pin)
 );
+
 ipcMain.handle("test-driver", () => tokenManager.testDriver());
+
+// Legacy compatibility
+ipcMain.handle("check-hardware-token", async (event, vendorId, productId) => {
+  try {
+    const isConnected = hardwareTokenManager.isTokenConnected(vendorId, productId);
+    return { success: true, connected: isConnected };
+  } catch (error) {
+    return { success: false, error: error.message, connected: false };
+  }
+});
+
+ipcMain.handle("request-token-access", async (event, vendorId, productId) => {
+  try {
+    const connectedTokens = hardwareTokenManager.checkAllConnectedDevices();
+    const isConnected = hardwareTokenManager.isTokenConnected(vendorId, productId);
+    return { success: true, connected: isConnected };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle("sign-and-verify-file", async (event, options = {}) => {
+  return await tokenManager.performTokenVerification(options.pin);
+});
 
 // File System Handlers
 ipcMain.handle("create-file", async (event, fileName, content) => {
@@ -492,6 +647,7 @@ ipcMain.handle("select-image-files", async () => {
       ],
     });
     if (result.canceled) return { success: false, canceled: true };
+    
     const fileData = await Promise.all(
       result.filePaths.map(async (filePath) => {
         const data = await fs.readFile(filePath);
@@ -511,7 +667,7 @@ ipcMain.handle("select-image-files", async () => {
   }
 });
 
-// Image Comparison (Mock) Handler
+// Image Comparison Handler
 ipcMain.handle("compare-images", async (event, imageData) => ({
   success: true,
   comparisons: imageData.map((img, index) => ({
@@ -523,14 +679,14 @@ ipcMain.handle("compare-images", async (event, imageData) => ({
         percentage: Math.floor(Math.random() * 100),
       },
       {
-        targetImage: "Reference 2",
+        targetImage: "Reference 2", 
         percentage: Math.floor(Math.random() * 100),
       },
     ].sort((a, b) => b.percentage - a.percentage),
   })),
 }));
 
-// System & Shell Handlers
+// System Handlers
 ipcMain.handle("get-system-info", () => ({
   success: true,
   info: {
@@ -538,6 +694,9 @@ ipcMain.handle("get-system-info", () => ({
     arch: process.arch,
     nodeVersion: process.versions.node,
     electronVersion: process.versions.electron,
+    chromeVersion: process.versions.chrome,
+    totalMemory: os.totalmem(),
+    cpus: os.cpus().length,
   },
 }));
 
@@ -555,50 +714,194 @@ ipcMain.handle("open-external", async (event, url) => {
   }
 });
 
-// Network Handler
-ipcMain.handle(
-  "api-request",
-  async (event, { url, method = "GET", headers = {}, body = null }) => {
-    try {
-      const request = net.request({ method, url, headers });
+// ENHANCED API REQUEST HANDLER - WITH FORMDATA SUPPORT
+ipcMain.handle("api-request", async (event, { url, method = "GET", headers = {}, body = null }) => {
+  try {
+    const fullUrl = url.startsWith('http') ? url : `http://192.168.88.69:8000${url}`;
+    
+    console.log('=== API REQUEST DEBUG ===');
+    console.log('URL:', fullUrl);
+    console.log('Method:', method);
+    console.log('Headers:', headers);
+    console.log('Body type:', typeof body);
+    
+    // Handle FormData from renderer
+    if (body && typeof body === 'object' && body.formData && body.files) {
+      console.log('Processing FormData request...');
+      console.log('FormData fields:', Object.keys(body.formData));
+      console.log('Files:', Object.keys(body.files));
+      
+      // Create form-data instance
+      const formData = new FormData();
+      
+      // Add regular form fields
+      Object.entries(body.formData).forEach(([key, value]) => {
+        console.log(`Adding field: ${key} = ${value}`);
+        formData.append(key, value);
+      });
+      
+      // Add files
+      Object.entries(body.files).forEach(([key, fileInfo]) => {
+        console.log(`Adding file: ${key} - ${fileInfo.name} (${fileInfo.size} bytes, ${fileInfo.type})`);
+        
+        // Convert base64 back to buffer
+        const base64Data = fileInfo.data.split(',')[1];
+        const buffer = Buffer.from(base64Data, 'base64');
+        
+        formData.append(key, buffer, {
+          filename: fileInfo.name,
+          contentType: fileInfo.type
+        });
+      });
+      
+      // Use form-data for the request
+      const request = net.request({
+        method,
+        url: fullUrl,
+        headers: {
+          ...formData.getHeaders(),
+          ...headers
+        }
+      });
+
       return new Promise((resolve) => {
-        let responseData = "";
-        request.on("response", (response) => {
-          response.on("data", (chunk) => {
+        let responseData = '';
+
+        request.on('response', (response) => {
+          console.log('FormData response status:', response.statusCode);
+          console.log('FormData response headers:', response.headers);
+          
+          response.on('data', (chunk) => {
             responseData += chunk;
           });
-          response.on("end", () => {
+
+          response.on('end', () => {
+            console.log('FormData response data length:', responseData.length);
+            console.log('FormData response preview:', responseData.substring(0, 200));
+            
             try {
-              resolve({
-                success: true,
-                data: JSON.parse(responseData),
+              const data = responseData ? JSON.parse(responseData) : null;
+              resolve({ 
+                success: true, 
+                data, 
                 status: response.statusCode,
-                headers: response.headers,
+                headers: response.headers 
               });
-            } catch {
-              resolve({
-                success: true,
-                data: responseData,
+            } catch (error) {
+              console.log('FormData response parse error, returning raw data');
+              resolve({ 
+                success: true, 
+                data: responseData, 
                 status: response.statusCode,
-                headers: response.headers,
+                headers: response.headers 
               });
             }
           });
         });
-        request.on("error", (error) =>
-          resolve({ success: false, error: error.message })
-        );
-        if (body && method !== "GET") request.write(JSON.stringify(body));
-        request.end();
+
+        request.on('error', (error) => {
+          console.error('FormData request error:', error);
+          resolve({ success: false, error: error.message });
+        });
+
+        // Write the form data
+        formData.pipe(request);
       });
-    } catch (error) {
-      return { success: false, error: error.message };
     }
+    
+    // Regular JSON request handling
+    console.log('Processing regular JSON request...');
+    const request = net.request({
+      method,
+      url: fullUrl,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': '*',
+        ...headers
+      }
+    });
+
+    return new Promise((resolve) => {
+      let responseData = '';
+
+      request.on('response', (response) => {
+        console.log('JSON response status:', response.statusCode);
+        
+        response.on('data', (chunk) => {
+          responseData += chunk;
+        });
+
+        response.on('end', () => {
+          try {
+            const data = responseData ? JSON.parse(responseData) : null;
+            resolve({ 
+              success: true, 
+              data, 
+              status: response.statusCode,
+              headers: response.headers 
+            });
+          } catch (error) {
+            resolve({ 
+              success: true, 
+              data: responseData, 
+              status: response.statusCode,
+              headers: response.headers 
+            });
+          }
+        });
+      });
+
+      request.on('error', (error) => {
+        console.error('JSON request error:', error);
+        resolve({ success: false, error: error.message });
+      });
+
+      if (body && method !== 'GET') {
+        const bodyString = typeof body === 'string' ? body : JSON.stringify(body);
+        console.log('Writing body:', bodyString.substring(0, 100) + '...');
+        request.write(bodyString);
+      }
+      request.end();
+    });
+  } catch (error) {
+    console.error('API request handler error:', error);
+    return { success: false, error: error.message };
   }
-);
+});
+
+// Command execution handler
+ipcMain.handle('run-test123-command', async (event, commandArgs = '') => {
+  return new Promise((resolve) => {
+    const fullCommand = commandArgs ? `/usr/local/bin/test123 ${commandArgs}` : '/usr/local/bin/test123 --help';
+    
+    const execOptions = {
+      env: { 
+        ...process.env, 
+        PATH: process.env.PATH + ':/usr/local/bin:/usr/bin:/bin' 
+      }
+    };
+    
+    exec(fullCommand, execOptions, (error, stdout, stderr) => {
+      if (error) {
+        resolve({ 
+          success: false, 
+          error: error.message, 
+          stdout: '', 
+          stderr,
+          command: fullCommand,
+          path: process.env.PATH 
+        });
+      } else {
+        resolve({ success: true, stdout, stderr, error: null });
+      }
+    });
+  });
+});
 
 // ====================================================================
-// SECTION 5: APPLICATION LIFECYCLE
+// SECTION 6: APPLICATION LIFECYCLE
 // ====================================================================
 
 app.commandLine.appendSwitch("no-sandbox");
@@ -607,36 +910,23 @@ app.whenReady().then(async () => {
   console.log("شروع راه‌اندازی برنامه...");
 
   try {
-    // ابتدا درایور را تست کنید
+    // Initialize hardware token manager
+    await hardwareTokenManager.initialize();
+
+    // Test driver availability (non-blocking)
     const driverTest = await tokenManager.testDriver();
     if (!driverTest.success) {
-      console.error("تست درایور ناموفق:", driverTest.error);
-      dialog.showErrorBox(
-        "خطای درایور",
-        `درایور PKCS#11 یافت نشد:\n${driverTest.error}`
-      );
-      app.quit();
-      return;
+      console.warn("درایور PKCS#11 در دسترس نیست:", driverTest.error);
+      // Don't quit the app, continue without PKCS#11 functionality
     }
 
-    console.log("درایور یافت شد، شروع تایید اولیه توکن...");
-    const initialResult = await tokenManager.performTokenVerification();
+    createWindow();
+    createMenu();
 
-    if (initialResult.success) {
-      console.log("تایید اولیه موفق. ایجاد پنجره اصلی...");
-      createWindow();
-      createMenu();
-      app.on("activate", () => {
-        if (BrowserWindow.getAllWindows().length === 0) createWindow();
-      });
-    } else {
-      console.error("تایید اولیه ناموفق:", initialResult.message);
-      dialog.showErrorBox(
-        "خطای دسترسی",
-        `توکن امنیتی معتبر یافت نشد.\n\nجزئیات: ${initialResult.message}`
-      );
-      app.quit();
-    }
+    app.on("activate", () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    });
+
   } catch (error) {
     console.error("خطای بحرانی در راه‌اندازی:", error);
     dialog.showErrorBox(
