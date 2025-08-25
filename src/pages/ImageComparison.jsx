@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 
 export default function ImageComparison() {
@@ -111,6 +110,25 @@ export default function ImageComparison() {
     const imageFile = files.find(file => file.type.startsWith('image/'));
     if (imageFile) {
       processFile(imageFile, imageSlot);
+    }
+  }, []);
+
+  // Enhanced base64 to file conversion
+  const base64ToFile = useCallback((base64Data, fileName, mimeType) => {
+    try {
+      const base64String = base64Data.split(",")[1];
+      const byteCharacters = atob(base64String);
+      const byteNumbers = new Array(byteCharacters.length);
+
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+
+      const byteArray = new Uint8Array(byteNumbers);
+      return new File([byteArray], fileName, { type: mimeType });
+    } catch (error) {
+      console.log("Error converting base64 to file:", error);
+      return null;
     }
   }, []);
 
@@ -231,7 +249,7 @@ export default function ImageComparison() {
     }
   }, []);
 
-  // Enhanced image comparison using electronFetch
+  // Fixed image comparison using correct API endpoint and parameters
   const compareImages = useCallback(async () => {
     if (!image1 || !image2) {
       setError('لطفاً هر دو تصویر را انتخاب کنید');
@@ -251,48 +269,83 @@ export default function ImageComparison() {
     try {
       const formData = new FormData();
       
-      // Helper function to handle different file formats
-      const processImageFile = (imageData, fieldName) => {
-        if (imageData.file && imageData.file.data) {
-          // Convert base64 to blob (from Electron)
-          const base64Data = imageData.file.data;
-          const byteCharacters = atob(base64Data);
-          const byteNumbers = new Array(byteCharacters.length);
-          for (let i = 0; i < byteCharacters.length; i++) {
-            byteNumbers[i] = byteCharacters.charCodeAt(i);
-          }
-          const byteArray = new Uint8Array(byteNumbers);
-          const blob = new Blob([byteArray], { type: imageData.type });
-          formData.append(fieldName, blob, imageData.name);
-        } else if (imageData.file instanceof File) {
-          formData.append(fieldName, imageData.file);
+      // Helper function to get file for FormData
+      const getFileForFormData = (imageData) => {
+        if (imageData.file instanceof File) {
+          return imageData.file;
         }
+        
+        // Convert base64 to File if needed
+        if (imageData.url && imageData.url.startsWith('data:')) {
+          return base64ToFile(imageData.url, imageData.name, imageData.type);
+        }
+        
+        return null;
       };
 
-      processImageFile(image1, 'image1');
-      processImageFile(image2, 'image2');
+      const file1 = getFileForFormData(image1);
+      const file2 = getFileForFormData(image2);
+
+      if (!file1 || !file2) {
+        throw new Error('خطا در آماده‌سازی فایل‌های تصویر');
+      }
+
+      // Use correct field names matching the API schema
+      formData.append('image1', file1);
+      formData.append('image2', file2);
+
+      console.log('=== COMPARISON DEBUG ===');
+      console.log('FormData contents:');
+      for (let [key, value] of formData.entries()) {
+        if (value instanceof File) {
+          console.log(`${key}: File(${value.name}, ${value.size} bytes, ${value.type})`);
+        } else {
+          console.log(`${key}: ${value}`);
+        }
+      }
+      console.log('API URL:', `${apiUrl}/api/similarity`);
 
       let response;
       
-      // Use electronFetch if available (CORS-free solution)
-      if (window.electronFetch) {
-        response = await window.electronFetch(`${apiUrl}/api/similarity`, {
-          method: 'POST',
-          body: formData
-        });
-      } else {
-        // Fallback to regular fetch
-        response = await fetch(`${apiUrl}/api/similarity`, {
-          method: 'POST',
-          body: formData
-        });
-      }
+      // Use standard fetch for FormData (works best with multipart/form-data)
+      console.log('Using standard fetch for FormData...');
+      response = await fetch(`${apiUrl}/api/similarity`, {
+        method: 'POST',
+        body: formData
+        // No Content-Type header - let browser set it with boundary
+      });
+
+      console.log('Response status:', response.status);
+      console.log('Response OK:', response.ok);
 
       if (!response.ok) {
-        throw new Error(`خطای سرور: ${response.status}`);
+        let errorText;
+        try {
+          errorText = await response.text();
+          console.error('Server error response:', errorText);
+          
+          // Try to parse as JSON to get detailed error
+          try {
+            const errorJson = JSON.parse(errorText);
+            if (errorJson.detail && Array.isArray(errorJson.detail)) {
+              const validationErrors = errorJson.detail.map(err => 
+                `${err.loc.join('.')}: ${err.msg}`
+              ).join(', ');
+              throw new Error(`خطای validation: ${validationErrors}`);
+            }
+          } catch (parseError) {
+            // If not JSON, use raw text
+          }
+        } catch (textError) {
+          errorText = 'Unable to read error response';
+        }
+        
+        throw new Error(`خطای سرور: ${response.status} - ${errorText}`);
       }
 
       const result = await response.json();
+      console.log('Comparison result:', result);
+
       setComparisonResult({
         ...result,
         comparedAt: new Date().toISOString(),
@@ -312,18 +365,49 @@ export default function ImageComparison() {
       }
 
     } catch (error) {
-      setError(`خطا در مقایسه تصاویر: ${error.message}`);
+      console.error('=== COMPARISON ERROR ===');
+      console.error('Error details:', error);
+      console.error('Error message:', error.message);
+      console.error('Error stack:', error.stack);
+      
+      let errorMessage = 'خطا در مقایسه تصاویر';
+      
+      if (error.message.includes('422')) {
+        errorMessage = 'خطای validation - لطفاً پارامترهای مقایسه را بررسی کنید';
+      } else if (error.message.includes('CORS')) {
+        errorMessage = 'خطای CORS - لطفاً تنظیمات سرور را بررسی کنید';
+      } else if (error.message.includes('fetch')) {
+        errorMessage = 'خطای شبکه - لطفاً اتصال اینترنت را بررسی کنید';
+      } else {
+        errorMessage = `خطا در مقایسه تصاویر: ${error.message}`;
+      }
+      
+      setError(errorMessage);
       
       if (window.commandLogger) {
         window.commandLogger.log('error', 'Image comparison failed', {
           error: error.message,
-          apiUrl
+          apiUrl,
+          image1Info: {
+            name: image1?.name,
+            size: image1?.size,
+            type: image1?.type,
+            hasFile: !!image1?.file,
+            hasUrl: !!image1?.url
+          },
+          image2Info: {
+            name: image2?.name,
+            size: image2?.size,
+            type: image2?.type,
+            hasFile: !!image2?.file,
+            hasUrl: !!image2?.url
+          }
         });
       }
     } finally {
       setIsLoading(false);
     }
-  }, [image1, image2, connectionStatus, apiUrl, saveSettings]);
+  }, [image1, image2, connectionStatus, apiUrl, base64ToFile, saveSettings]);
 
   // Remove image handler
   const removeImage = useCallback((imageSlot) => {
@@ -722,7 +806,7 @@ export default function ImageComparison() {
 
       {/* Footer */}
       <div className="text-center mt-8 text-gray-500 text-sm">
-        <p>نسخه 2.0.0 • مقایسه تصاویر با رفع مشکل CORS</p>
+        <p>نسخه 2.1.0 • مقایسه تصاویر با API درست شده</p>
         <p className="text-xs mt-1">
           {window.electronAPI ? '🖥️ Electron Mode' : '🌐 Web Mode'} • 
           {window.electronFetch ? ' CORS-Free ✅' : ' Standard Fetch ⚠️'}

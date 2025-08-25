@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 export default function About() {
   const [settings, setSettings] = useState({
     backendUrl: 'http://192.168.88.69:8000',
+    aiApiUrl: 'http://192.168.88.69:11434', // Added AI API URL
     apiTimeout: 30000,
     maxFileSize: 10, // MB
     supportedFormats: ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'],
@@ -13,6 +14,8 @@ export default function About() {
   const [isTestingConnection, setIsTestingConnection] = useState(false);
   const [testResult, setTestResult] = useState(null);
   const [systemInfo, setSystemInfo] = useState(null);
+  const [testingAI, setTestingAI] = useState(false);
+  const [aiTestResult, setAiTestResult] = useState(null);
 
   // Load settings and system info on component mount
   useEffect(() => {
@@ -26,10 +29,10 @@ export default function About() {
       
       // Try enhanced storage first
       if (window.storage && typeof window.storage.get === 'function') {
-        savedSettings = window.storage.get('imageComparisonSettings', null);
+        savedSettings = window.storage.get('appSettings', null);
       } else if (typeof localStorage !== 'undefined') {
         // Fallback to localStorage
-        const stored = localStorage.getItem('imageComparisonSettings');
+        const stored = localStorage.getItem('appSettings');
         if (stored) {
           savedSettings = JSON.parse(stored);
         }
@@ -123,21 +126,71 @@ export default function About() {
     }
   };
 
+  // Test AI server connection
+  const testAIConnection = async () => {
+    setTestingAI(true);
+    setAiTestResult(null);
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), settings.apiTimeout);
+
+      let response;
+      
+      // Use electronFetch if available
+      if (window.electronFetch) {
+        response = await window.electronFetch(`${settings.aiApiUrl}/api/tags`);
+      } else {
+        response = await fetch(`${settings.aiApiUrl}/api/tags`, {
+          method: 'GET',
+          signal: controller.signal
+        });
+      }
+
+      clearTimeout(timeoutId);
+
+      if (response.ok) {
+        const data = await response.json();
+        setAiTestResult({ 
+          success: true, 
+          message: 'اتصال AI با موفقیت برقرار شد',
+          details: data
+        });
+      } else {
+        setAiTestResult({ success: false, message: `خطای AI سرور: ${response.status}` });
+      }
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        setAiTestResult({ 
+          success: false, 
+          message: 'مهلت زمانی اتصال AI به پایان رسید'
+        });
+      } else {
+        setAiTestResult({ 
+          success: false, 
+          message: `خطا در اتصال AI: ${error.message}` 
+        });
+      }
+    } finally {
+      setTestingAI(false);
+    }
+  };
+
   const saveSettings = () => {
     try {
       if (window.storage && typeof window.storage.set === 'function') {
-        window.storage.set('imageComparisonSettings', settings);
-        alert('✅ تنظیمات با موفقیت ذخیره شد');
+        window.storage.set('appSettings', settings);
+        alert('تنظیمات با موفقیت ذخیره شد');
       } else if (typeof localStorage !== 'undefined') {
         // Fallback to localStorage
-        localStorage.setItem('imageComparisonSettings', JSON.stringify(settings));
-        alert('✅ تنظیمات با موفقیت ذخیره شد');
+        localStorage.setItem('appSettings', JSON.stringify(settings));
+        alert('تنظیمات با موفقیت ذخیره شد');
       } else {
-        alert('❌ سیستم ذخیره‌سازی در دسترس نیست');
+        alert('سیستم ذخیره‌سازی در دسترس نیست');
       }
     } catch (error) {
       console.error('خطا در ذخیره تنظیمات:', error);
-      alert('❌ خطا در ذخیره تنظیمات: ' + error.message);
+      alert('خطا در ذخیره تنظیمات: ' + error.message);
     }
   };
 
@@ -145,6 +198,7 @@ export default function About() {
     if (confirm('آیا مطمئن هستید که می‌خواهید تنظیمات را به حالت پیش‌فرض برگردانید؟')) {
       const defaultSettings = {
         backendUrl: 'http://192.168.88.69:8000',
+        aiApiUrl: 'http://192.168.88.69:11434',
         apiTimeout: 30000,
         maxFileSize: 10,
         supportedFormats: ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'],
@@ -156,12 +210,12 @@ export default function About() {
       
       try {
         if (window.storage && typeof window.storage.remove === 'function') {
-          window.storage.remove('imageComparisonSettings');
+          window.storage.remove('appSettings');
         } else if (typeof localStorage !== 'undefined') {
-          localStorage.removeItem('imageComparisonSettings');
+          localStorage.removeItem('appSettings');
         }
         
-        alert('✅ تنظیمات به حالت پیش‌فرض برگردانده شد');
+        alert('تنظیمات به حالت پیش‌فرض برگردانده شد');
       } catch (error) {
         console.error('Error clearing settings:', error);
       }
@@ -177,7 +231,7 @@ export default function About() {
         const result = await window.electronAPI.createFile(fileName, data);
         
         if (result.success) {
-          alert(`✅ تنظیمات در ${result.path} ذخیره شد`);
+          alert(`تنظیمات در ${result.path} ذخیره شد`);
         } else {
           throw new Error(result.error);
         }
@@ -192,16 +246,16 @@ export default function About() {
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
-        alert('✅ تنظیمات دانلود شد');
+        alert('تنظیمات دانلود شد');
       }
     } catch (error) {
       console.error('خطا در صادر کردن تنظیمات:', error);
-      alert('❌ خطا در صادر کردن تنظیمات: ' + error.message);
+      alert('خطا در صادر کردن تنظیمات: ' + error.message);
     }
   };
 
   const clearAllData = () => {
-    if (confirm('⚠️ آیا مطمئن هستید که می‌خواهید تمام داده‌ها را پاک کنید؟\n\nاین شامل تنظیمات، تصاویر ذخیره شده، و سیستم cache است.')) {
+    if (confirm('آیا مطمئن هستید که می‌خواهید تمام داده‌ها را پاک کنید؟\n\nاین شامل تنظیمات، تصاویر ذخیره شده، و سیستم cache است.')) {
       try {
         if (window.storage && typeof window.storage.clear === 'function') {
           window.storage.clear();
@@ -212,6 +266,7 @@ export default function About() {
         // Reset to defaults
         const defaultSettings = {
           backendUrl: 'http://192.168.88.69:8000',
+          aiApiUrl: 'http://192.168.88.69:11434',
           apiTimeout: 30000,
           maxFileSize: 10,
           supportedFormats: ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'],
@@ -220,10 +275,10 @@ export default function About() {
         };
         setSettings(defaultSettings);
         
-        alert('✅ تمام داده‌ها پاک شد و تنظیمات به حالت پیش‌فرض برگردانده شد');
+        alert('تمام داده‌ها پاک شد و تنظیمات به حالت پیش‌فرض برگردانده شد');
       } catch (error) {
         console.error('Error clearing data:', error);
-        alert('❌ خطا در پاک کردن داده‌ها: ' + error.message);
+        alert('خطا در پاک کردن داده‌ها: ' + error.message);
       }
     }
   };
@@ -264,7 +319,7 @@ export default function About() {
                     تست...
                   </span>
                 ) : (
-                  '🔍 تست اتصال'
+                  'تست اتصال'
                 )}
               </button>
             </div>
@@ -276,7 +331,7 @@ export default function About() {
                   : 'bg-red-50 text-red-800 border-red-200'
               }`}>
                 <div className="font-medium flex items-center gap-2">
-                  <span>{testResult.success ? '✅' : '❌'}</span>
+                  <span>{testResult.success ? '✓' : '✗'}</span>
                   {testResult.message}
                 </div>
                 {testResult.details && (
@@ -289,6 +344,59 @@ export default function About() {
                     {testResult.details.index_size && (
                       <div><strong>تعداد تصاویر در ایندکس:</strong> {testResult.details.index_size.toLocaleString('fa-IR')}</div>
                     )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* AI API URL */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              آدرس سرور AI (Ollama)
+            </label>
+            <div className="flex gap-2">
+              <input
+                type="url"
+                value={settings.aiApiUrl}
+                onChange={(e) => handleSettingChange('aiApiUrl', e.target.value)}
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 text-black"
+                placeholder="http://192.168.88.69:11434"
+              />
+              <button
+                onClick={testAIConnection}
+                disabled={testingAI}
+                className="px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 disabled:opacity-50 transition-colors"
+              >
+                {testingAI ? (
+                  <span className="flex items-center gap-2">
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    تست AI...
+                  </span>
+                ) : (
+                  'تست AI'
+                )}
+              </button>
+            </div>
+            
+            {aiTestResult && (
+              <div className={`mt-3 p-3 rounded-lg text-sm border ${
+                aiTestResult.success 
+                  ? 'bg-green-50 text-green-800 border-green-200' 
+                  : 'bg-red-50 text-red-800 border-red-200'
+              }`}>
+                <div className="font-medium flex items-center gap-2">
+                  <span>{aiTestResult.success ? '✓' : '✗'}</span>
+                  {aiTestResult.message}
+                </div>
+                {aiTestResult.details && aiTestResult.details.models && (
+                  <div className="mt-2 text-xs bg-white bg-opacity-50 p-2 rounded border">
+                    <div><strong>مدل‌های موجود:</strong> {aiTestResult.details.models.length} مدل</div>
+                    <div className="max-h-20 overflow-y-auto mt-1">
+                      {aiTestResult.details.models.map((model, index) => (
+                        <div key={index} className="text-gray-600">• {model.name}</div>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>
@@ -338,7 +446,7 @@ export default function About() {
           {/* Comparison Threshold */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              آستانه شباهت: {settings.comparisonThreshold}%
+              آستانه شباهت پیش‌فرض: {settings.comparisonThreshold}%
             </label>
             <input
               type="range"
@@ -358,7 +466,7 @@ export default function About() {
           {/* Max Images */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              حداکثر تعداد تصاویر برای هر مقایسه
+              حداکثر تعداد نتایج جستجو
             </label>
             <select
               value={settings.maxImagesPerComparison}
@@ -446,7 +554,7 @@ export default function About() {
             </h3>
             <ul className="space-y-2 text-sm text-gray-600">
               <li><strong>نام:</strong> مقایسه‌گر تصاویر پیشرفته</li>
-              <li><strong>نسخه:</strong> 3.0.0</li>
+              <li><strong>نسخه:</strong> 3.1.0</li>
               <li><strong>پلتفرم:</strong> Electron + React + Vite</li>
               <li><strong>زبان برنامه‌نویسی:</strong> JavaScript/JSX</li>
               <li><strong>UI Framework:</strong> Tailwind CSS</li>
@@ -481,7 +589,7 @@ export default function About() {
           <div>
             <h3 className="text-lg font-medium mb-3 flex items-center gap-2">
               <span>🌐</span>
-              Endpoints موجود
+              Backend Endpoints
             </h3>
             <ul className="space-y-2 text-sm text-gray-600">
               <li><strong>GET /api/health:</strong> بررسی وضعیت سرور</li>
@@ -489,21 +597,34 @@ export default function About() {
               <li><strong>POST /api/search:</strong> جستجوی تصاویر مشابه</li>
               <li><strong>GET /api/list-images:</strong> لیست تمام تصاویر</li>
               <li><strong>POST /api/rebuild-faiss:</strong> بازسازی ایندکس</li>
-              <li><strong>POST /api/generate:</strong> تولید توضیح AI</li>
-              <li><strong>POST /api/chat:</strong> چت با AI</li>
             </ul>
           </div>
           
           <div>
             <h3 className="text-lg font-medium mb-3 flex items-center gap-2">
-              <span>🚀</span>
-              ویژگی‌های پیشرفته
+              <span>🤖</span>
+              AI Endpoints (Ollama)
             </h3>
             <ul className="space-y-2 text-sm text-gray-600">
+              <li><strong>GET /api/tags:</strong> لیست مدل‌های موجود</li>
+              <li><strong>POST /api/generate:</strong> تولید توضیح AI</li>
+              <li><strong>POST /api/chat:</strong> چت با AI</li>
+              <li><strong>Model Used:</strong> moondream:latest</li>
+              <li><strong>Context Support:</strong> تصاویر + متن</li>
+            </ul>
+          </div>
+        </div>
+        
+        <div className="mt-6 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200">
+          <h4 className="font-medium text-blue-800 mb-2">ویژگی‌های پیشرفته:</h4>
+          <div className="grid md:grid-cols-2 gap-4 text-sm text-blue-700">
+            <ul className="space-y-1">
               <li>✅ استفاده از Swin Transformer</li>
               <li>✅ ایندکس FAISS برای جستجوی سریع</li>
               <li>✅ پشتیبانی از multipart/form-data</li>
               <li>✅ تنظیمات threshold و k قابل تغییر</li>
+            </ul>
+            <ul className="space-y-1">
               <li>✅ مدیریت خطا و validation کامل</li>
               <li>✅ الکترون API برای رفع CORS</li>
               <li>✅ ذخیره‌سازی session با encryption</li>
@@ -627,6 +748,7 @@ export default function About() {
               <div><strong>❌ مشکل توکن:</strong> مطمئن شوید توکن متصل است و PIN صحیح است</div>
               <div><strong>❌ خطای AI:</strong> بررسی کنید سرور Ollama در حال اجرا است</div>
               <div><strong>❌ مشکل CORS:</strong> از حالت Electron استفاده کنید</div>
+              <div><strong>❌ خطای 422:</strong> پارامترهای ارسالی را بررسی کنید (query_image, image1, image2)</div>
             </div>
           </div>
         </div>
@@ -644,13 +766,14 @@ export default function About() {
             <div><strong>Electron APIs:</strong> {window.electronAPI ? 'Available ✓' : 'Not Available'}</div>
             <div><strong>CORS-Free Fetch:</strong> {window.electronFetch ? 'Available ✓' : 'Not Available'}</div>
             <div><strong>Current URL:</strong> {window.location.href}</div>
+            <div><strong>Settings Storage:</strong> {typeof localStorage !== 'undefined' ? 'LocalStorage ✓' : 'Not Available'}</div>
           </div>
         </div>
       </div>
       
       {/* Footer */}
       <div className="text-center mt-8 text-gray-500 text-sm">
-        <p className="mb-2">🚀 مقایسه‌گر تصاویر پیشرفته - نسخه 3.0.0</p>
+        <p className="mb-2">🚀 مقایسه‌گر تصاویر پیشرفته - نسخه 3.1.0</p>
         <p className="text-xs">
           طراحی شده با ❤️ برای مقایسه دقیق تصاویر • 
           {window.electronAPI ? ' 🖥️ Desktop Mode' : ' 🌐 Web Mode'} • 
