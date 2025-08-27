@@ -27,7 +27,7 @@
       "buildResources": "assets"
     },
     "linux": {
-      "args": [
+      "executableArgs": [
         "--no-sandbox"
       ],
       "extraResources": [

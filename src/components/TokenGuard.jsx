@@ -1,39 +1,86 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 
 const TokenGuard = ({ children }) => {
-  const [status, setStatus] = useState('checking'); // 'checking' | 'granted' | 'denied' | 'error'
+  const [status, setStatus] = useState('checking');
   const [tokenInfo, setTokenInfo] = useState(null);
   const [error, setError] = useState(null);
   const [isRetrying, setIsRetrying] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
   const [lastVerification, setLastVerification] = useState(null);
+  const [hardwareConnected, setHardwareConnected] = useState(false);
+  const [knownTokenId, setKnownTokenId] = useState(null);
+  const [reconnectionAttempt, setReconnectionAttempt] = useState(false);
 
-  // Enhanced token verification with better error handling
-  const verifyToken = useCallback(async (showLoading = true) => {
-    if (showLoading) {
-      setStatus('checking');
-      setError(null);
+  // Enhanced refs for better state management
+  const listenersSetup = useRef(false);
+  const periodicCheckRef = useRef(null);
+  const verificationInProgress = useRef(false);
+  const currentTokenState = useRef({ connected: false, tokenId: null });
+  const stateTransitionLock = useRef(false);
+
+  const verifyToken = useCallback(async (showLoading = true, isReconnection = false) => {
+    // Prevent concurrent verifications
+    if (verificationInProgress.current) {
+      console.log('Verification already in progress, skipping...');
+      return;
     }
     
-    // Wait for API to be ready
-    while (!window.electronAPI) {
-      await new Promise(resolve => setTimeout(resolve, 100));
-    }
+    verificationInProgress.current = true;
 
-    // Minimum loading time for better UX
-    const startTime = Date.now();
-    
     try {
-      // First check token status
+      if (showLoading) {
+        setStatus('checking');
+        setError(null);
+      }
+      
+      // Wait for API to be ready with timeout
+      let attempts = 0;
+      while (!window.electronAPI && attempts < 50) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        attempts++;
+      }
+
+      if (!window.electronAPI) {
+        setError('API الکترون در دسترس نیست. لطفاً برنامه را مجدداً راه‌اندازی کنید.');
+        setStatus('error');
+        return;
+      }
+
+      const startTime = Date.now();
+      
+      // First check hardware token presence
+      const hardwareCheck = await checkHardwareToken();
+      
+      if (!hardwareCheck.connected) {
+        const elapsed = Date.now() - startTime;
+        if (elapsed < 1500 && showLoading) {
+          await new Promise(resolve => setTimeout(resolve, 1500 - elapsed));
+        }
+        
+        setHardwareConnected(false);
+        currentTokenState.current = { connected: false, tokenId: null };
+        setStatus('denied');
+        setError('توکن سخت‌افزاری متصل نیست. لطفاً توکن را به کامپیوتر وصل کنید.');
+        return;
+      }
+
+      // Update hardware state
+      setHardwareConnected(true);
+      currentTokenState.current = { 
+        connected: true, 
+        tokenId: hardwareCheck.tokenId 
+      };
+      
+      // Check token status first
       const statusResult = await window.electronAPI.checkTokenStatus();
       
       if (statusResult.success && statusResult.data) {
         setTokenInfo(statusResult.data);
         
-        // If we have a recent successful verification, use it
         if (statusResult.data.lastVerification && 
             statusResult.data.lastVerification.success &&
-            isRecentVerification(statusResult.data.lastVerification.timestamp)) {
+            isRecentVerification(statusResult.data.lastVerification.timestamp) &&
+            !isReconnection) {
           
           const elapsed = Date.now() - startTime;
           if (elapsed < 1500 && showLoading) {
@@ -42,6 +89,7 @@ const TokenGuard = ({ children }) => {
           
           setLastVerification(statusResult.data.lastVerification);
           setStatus('granted');
+          setReconnectionAttempt(false);
           return;
         }
       }
@@ -49,7 +97,6 @@ const TokenGuard = ({ children }) => {
       // Perform new verification
       const verifyResult = await window.electronAPI.verifyToken({});
       
-      // Minimum loading time
       const elapsed = Date.now() - startTime;
       if (elapsed < 1500 && showLoading) {
         await new Promise(resolve => setTimeout(resolve, 1500 - elapsed));
@@ -60,36 +107,66 @@ const TokenGuard = ({ children }) => {
         setTokenInfo(prev => ({ ...prev, lastVerification: verifyResult }));
         setStatus('granted');
         setRetryCount(0);
+        setReconnectionAttempt(false);
+        
+        if (hardwareCheck.tokenId) {
+          setKnownTokenId(hardwareCheck.tokenId);
+          try {
+            localStorage.setItem('knownTokenId', hardwareCheck.tokenId);
+          } catch (e) {
+            console.warn('Could not save token ID to localStorage:', e);
+          }
+        }
       } else {
         setError(verifyResult.message || 'تایید توکن ناموفق بود');
         setStatus('denied');
       }
 
     } catch (err) {
-      const elapsed = Date.now() - startTime;
-      if (elapsed < 1500 && showLoading) {
-        await new Promise(resolve => setTimeout(resolve, 1500 - elapsed));
-      }
-      
+      console.error('Token verification error:', err);
       setError(err.message || 'خطا در تایید توکن');
       setStatus('error');
+    } finally {
+      verificationInProgress.current = false;
     }
   }, []);
 
-  // Check if verification is recent (within last 10 minutes)
+  const checkHardwareToken = useCallback(async () => {
+    try {
+      const result = await window.electronAPI.checkHardwareToken(0x096e, 0x0703);
+      
+      if (result.success && result.connected) {
+        const tokenId = `${0x096e}:${0x0703}`;
+        return {
+          connected: true,
+          tokenId: tokenId
+        };
+      }
+      
+      return { connected: false };
+    } catch (error) {
+      console.error('Hardware token check failed:', error);
+      return { connected: false };
+    }
+  }, []);
+
   const isRecentVerification = (timestamp) => {
     if (!timestamp) return false;
-    const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
-    return new Date(timestamp) > tenMinutesAgo;
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+    return new Date(timestamp) > fiveMinutesAgo;
   };
 
-  // Retry with exponential backoff
+  const handleReconnection = useCallback(async () => {
+    console.log('Starting reconnection process...');
+    setReconnectionAttempt(true);
+    await verifyToken(true, true);
+  }, [verifyToken]);
+
   const retryVerification = useCallback(async () => {
     setIsRetrying(true);
     const newRetryCount = retryCount + 1;
     setRetryCount(newRetryCount);
     
-    // Exponential backoff: 2^n seconds, max 30 seconds
     const delay = Math.min(Math.pow(2, newRetryCount) * 1000, 30000);
     await new Promise(resolve => setTimeout(resolve, delay));
     
@@ -97,61 +174,192 @@ const TokenGuard = ({ children }) => {
     setIsRetrying(false);
   }, [retryCount, verifyToken]);
 
-  // Setup event listeners and initial verification
+  // Enhanced state transition handlers
+  const handleConnect = useCallback(async (data) => {
+    console.log('Connect event received:', data);
+    
+    // Prevent race conditions
+    if (stateTransitionLock.current) {
+      console.log('State transition locked, queuing connect...');
+      setTimeout(() => handleConnect(data), 500);
+      return;
+    }
+    
+    stateTransitionLock.current = true;
+    
+    try {
+      const tokenId = `${data.vendorId}:${data.productId}`;
+      const storedTokenId = localStorage.getItem('knownTokenId');
+      
+      // Update hardware state immediately
+      setHardwareConnected(true);
+      currentTokenState.current = { connected: true, tokenId };
+      
+      // Clear any error states
+      setError(null);
+      
+      // Handle reconnection or new connection
+      if (storedTokenId && tokenId === storedTokenId && status === 'disconnected') {
+        console.log('Known token reconnected after disconnect - starting verification');
+        setReconnectionAttempt(true);
+        setStatus('checking');
+        await handleReconnection();
+      } else if (status === 'disconnected') {
+        console.log('Token connected after disconnect - starting fresh verification');
+        setStatus('checking');
+        await verifyToken(true);
+      } else if (status !== 'granted') {
+        console.log('Token connected - starting verification');
+        await verifyToken(false);
+      }
+      
+    } catch (error) {
+      console.error('Error in handleConnect:', error);
+    } finally {
+      stateTransitionLock.current = false;
+    }
+  }, [status, handleReconnection, verifyToken]);
+
+  const handleDisconnect = useCallback((data) => {
+    console.log('Disconnect event received:', data);
+    
+    // Prevent race conditions
+    if (stateTransitionLock.current) {
+      console.log('State transition locked, queuing disconnect...');
+      setTimeout(() => handleDisconnect(data), 100);
+      return;
+    }
+    
+    stateTransitionLock.current = true;
+    
+    try {
+      // Update state immediately
+      setHardwareConnected(false);
+      currentTokenState.current = { connected: false, tokenId: null };
+      
+      // Only change to disconnected if we were previously granted or checking
+      if (status === 'granted' || status === 'checking') {
+        setStatus('disconnected');
+        setError('توکن سخت‌افزاری قطع شد. برای ادامه کار، آن را مجدداً وصل کنید.');
+        setReconnectionAttempt(false);
+      }
+      
+    } finally {
+      stateTransitionLock.current = false;
+    }
+  }, [status]);
+
+  // Setup event listeners only once
   useEffect(() => {
-    let cleanup = [];
+    // Prevent multiple setups
+    if (listenersSetup.current || !window.electronAPI) return;
+    
+    console.log('Setting up TokenGuard event listeners...');
+    listenersSetup.current = true;
 
-    const setupListeners = () => {
-      if (!window.electronAPI) return;
+    // Load known token ID from storage
+    try {
+      const storedTokenId = localStorage.getItem('knownTokenId');
+      if (storedTokenId) {
+        setKnownTokenId(storedTokenId);
+      }
+    } catch (e) {
+      console.warn('Could not load token ID from localStorage:', e);
+    }
 
-      // Token verification result listener
-      const removeVerificationListener = window.electronAPI.onTokenVerificationResult((event, result) => {
-        console.log('🔐 Token verification result:', result);
-        setLastVerification(result);
-        
+    // Create event handlers
+    const handleVerificationResult = (event, result) => {
+      console.log('Verification result received:', result);
+      setLastVerification(result);
+      
+      // Only update status if hardware is still connected
+      if (currentTokenState.current.connected) {
         if (result.success) {
           setStatus('granted');
           setError(null);
           setRetryCount(0);
+          setReconnectionAttempt(false);
         } else {
           setStatus('denied');
           setError(result.message || 'تایید توکن ناموفق');
         }
-      });
-
-      // Hardware token connection listeners
-      const removeConnectedListener = window.electronAPI.onTokenConnected((event, data) => {
-        console.log('🔌 Hardware token connected:', data);
-        // Auto-verify when token is connected
-        setTimeout(() => verifyToken(false), 1000);
-      });
-
-      const removeDisconnectedListener = window.electronAPI.onTokenDisconnected((event, data) => {
-        console.log('🔌 Hardware token disconnected:', data);
-        setStatus('denied');
-        setError('توکن سخت‌افزاری قطع شد');
-      });
-
-      cleanup.push(removeVerificationListener, removeConnectedListener, removeDisconnectedListener);
+      } else {
+        console.log('Ignoring verification result - hardware disconnected');
+      }
     };
 
-    // Initial setup
-    setupListeners();
+    // Register event listeners
+    const removeVerificationListener = window.electronAPI.onTokenVerificationResult(handleVerificationResult);
+    const removeConnectedListener = window.electronAPI.onTokenConnected((event, data) => {
+      handleConnect(data);
+    });
+    const removeDisconnectedListener = window.electronAPI.onTokenDisconnected((event, data) => {
+      handleDisconnect(data);
+    });
+
+    // Initial verification
     verifyToken();
 
-    // Periodic verification (every 5 minutes)
-    const periodicCheck = setInterval(() => {
-      if (status === 'granted') {
-        verifyToken(false);
+    // Cleanup function
+    return () => {
+      console.log('Cleaning up TokenGuard event listeners...');
+      listenersSetup.current = false;
+      stateTransitionLock.current = false;
+      verificationInProgress.current = false;
+      
+      if (typeof removeVerificationListener === 'function') removeVerificationListener();
+      if (typeof removeConnectedListener === 'function') removeConnectedListener();
+      if (typeof removeDisconnectedListener === 'function') removeDisconnectedListener();
+      
+      if (periodicCheckRef.current) {
+        clearInterval(periodicCheckRef.current);
+        periodicCheckRef.current = null;
       }
-    }, 5 * 60 * 1000);
+    };
+  }, []); // Empty dependency array - runs only once
 
-    cleanup.push(() => clearInterval(periodicCheck));
+  // Enhanced periodic checking
+  useEffect(() => {
+    // Only setup periodic check when granted
+    if (status === 'granted') {
+      if (periodicCheckRef.current) {
+        clearInterval(periodicCheckRef.current);
+      }
+
+      periodicCheckRef.current = setInterval(async () => {
+        try {
+          const hardwareStatus = await checkHardwareToken();
+          
+          if (!hardwareStatus.connected && currentTokenState.current.connected) {
+            console.log('Periodic check detected hardware disconnect');
+            handleDisconnect({ source: 'periodic-check' });
+          } else if (hardwareStatus.connected && !currentTokenState.current.connected) {
+            console.log('Periodic check detected hardware reconnect');
+            handleConnect({ 
+              vendorId: 0x096e, 
+              productId: 0x0703,
+              source: 'periodic-check'
+            });
+          }
+        } catch (error) {
+          console.error('Periodic check error:', error);
+        }
+      }, 3000); // Check every 3 seconds
+      
+    } else {
+      if (periodicCheckRef.current) {
+        clearInterval(periodicCheckRef.current);
+        periodicCheckRef.current = null;
+      }
+    }
 
     return () => {
-      cleanup.forEach(fn => typeof fn === 'function' && fn());
+      if (periodicCheckRef.current) {
+        clearInterval(periodicCheckRef.current);
+        periodicCheckRef.current = null;
+      }
     };
-  }, [verifyToken, status]);
+  }, [status, checkHardwareToken, handleConnect, handleDisconnect]);
 
   // Test driver functionality
   const testDriver = useCallback(async () => {
@@ -160,24 +368,53 @@ const TokenGuard = ({ children }) => {
         const result = await window.electronAPI.testDriver();
         
         if (result.success) {
-          alert(`✅ درایور یافت شد!\n\nمسیر: ${result.driverPath}\nتعداد اسلات: ${result.slots?.length || 0}\nاسلات‌ها: ${result.slots?.map(s => s.description).join(', ') || 'نامشخص'}`);
+          alert(`درایور یافت شد!\n\nمسیر: ${result.driverPath}\nتعداد اسلات: ${result.slots?.length || 0}`);
         } else {
-          alert(`❌ خطا در تست درایور:\n\n${result.error}`);
+          alert(`خطا در تست درایور:\n\n${result.error}`);
         }
       } else {
-        alert('❌ تابع تست درایور در دسترس نیست');
+        alert('تابع تست درایور در دسترس نیست');
       }
     } catch (error) {
-      alert(`❌ خطا در تست درایور:\n\n${error.message}`);
+      alert(`خطا در تست درایور:\n\n${error.message}`);
     }
   }, []);
 
-  // Loading Screen - Enhanced & Beautiful
+  // Helper function to safely render object details
+  const renderObjectDetails = (obj) => {
+    if (!obj || typeof obj !== 'object') return 'نامشخص';
+    
+    try {
+      return Object.entries(obj).map(([key, value]) => {
+        let displayValue = value;
+        if (typeof value === 'object') {
+          displayValue = JSON.stringify(value);
+        } else if (typeof value === 'boolean') {
+          displayValue = value ? 'بله' : 'خیر';
+        }
+        return `${key}: ${displayValue}`;
+      }).join(', ');
+    } catch (error) {
+      return 'خطا در نمایش جزئیات';
+    }
+  };
+
+  // Debug info
+  useEffect(() => {
+    console.log('TokenGuard State:', {
+      status,
+      hardwareConnected,
+      currentTokenState: currentTokenState.current,
+      verificationInProgress: verificationInProgress.current,
+      stateTransitionLock: stateTransitionLock.current
+    });
+  }, [status, hardwareConnected]);
+
+  // Loading Screen
   if (status === 'checking') {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-white to-indigo-50">
-        <div className="text-center p-8">
-          {/* Logo/Icon */}
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-blue-50 via-white to-indigo-50">
+        <div className="text-center p-8 max-w-md">
           <div className="mb-8">
             <div className="relative">
               <div className="w-20 h-20 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg">
@@ -185,34 +422,23 @@ const TokenGuard = ({ children }) => {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
                 </svg>
               </div>
-              {/* Rotating ring around the icon */}
               <div className="absolute inset-0 w-24 h-24 border-4 border-transparent border-t-blue-500 rounded-full animate-spin mx-auto"></div>
             </div>
             <h1 className="text-2xl font-bold text-gray-800 mb-2">سیستم امنیتی PKCS#11</h1>
           </div>
 
-          {/* Loading Animation */}
-          <div className="mb-6">
-            <div className="flex justify-center space-x-1 rtl:space-x-reverse mb-4">
-              <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"></div>
-              <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
-              <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
-            </div>
-          </div>
-
-          {/* Status Text */}
           <div className="space-y-2">
-            <p className="text-xl font-semibold text-gray-700">در حال تایید توکن امنیتی</p>
+            <p className="text-xl font-semibold text-gray-700">
+              {reconnectionAttempt ? 'در حال اتصال مجدد به توکن...' : 'در حال تایید توکن امنیتی'}
+            </p>
             <p className="text-gray-500">لطفاً کمی صبر کنید...</p>
-            {tokenInfo && (
-              <p className="text-sm text-blue-600">
-                {tokenInfo.driverPath && `درایور: ${tokenInfo.driverPath.split('/').pop()}`}
-                {tokenInfo.isInitialized && ' • آماده'}
+            {!hardwareConnected && (
+              <p className="text-orange-600 text-sm">
+                در حال بررسی اتصال سخت‌افزاری...
               </p>
             )}
           </div>
 
-          {/* Progress Bar */}
           <div className="mt-6 w-64 h-2 bg-gray-200 rounded-full mx-auto overflow-hidden">
             <div className="h-full bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full animate-pulse"></div>
           </div>
@@ -221,28 +447,87 @@ const TokenGuard = ({ children }) => {
     );
   }
 
-  // Access Denied - Enhanced with More Options
-  if (status === 'denied' || status === 'error') {
+  // Token Disconnected State
+  if (status === 'disconnected') {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
-        <div className="text-center p-8 bg-white rounded-xl shadow-lg max-w-md w-full">
-          {/* Error Icon */}
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-red-50 to-orange-50 p-4">
+        <div className="text-center p-8 bg-white rounded-xl shadow-lg max-w-md w-full border-2 border-red-200">
           <div className="mb-6">
-            <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
               <svg className="w-10 h-10 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                {status === 'error' ? (
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                ) : (
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 15c-.77.833.192 2.5 1.732 2.5z" />
-                )}
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728L5.636 5.636m12.728 12.728L18.364 5.636M5.636 18.364l12.728-12.728" />
               </svg>
             </div>
           </div>
 
-          {/* Content */}
+          <div className="mb-8">
+            <h2 className="text-2xl font-bold text-red-900 mb-3">
+              ارتباط قطع شده
+            </h2>
+            
+            <div className="text-red-700 leading-relaxed space-y-2">
+              <p className="font-semibold">توکن سخت‌افزاری قطع شده است!</p>
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm">
+                <strong>برای ادامه کار:</strong><br />
+                1. توکن را مجدداً به کامپیوتر وصل کنید<br />
+                2. سیستم به صورت خودکار آن را تشخیص خواهد داد<br />
+                3. در صورت نیاز دکمه تلاش مجدد را بزنید
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            {reconnectionAttempt ? (
+              <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <div className="flex items-center gap-2 text-yellow-800">
+                  <div className="w-4 h-4 border-2 border-yellow-600 border-t-transparent rounded-full animate-spin"></div>
+                  <span>در حال اتصال مجدد...</span>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => verifyToken()}
+                className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-3 px-6 rounded-lg hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 font-medium shadow-md hover:shadow-lg transform hover:scale-105"
+              >
+                تلاش مجدد اتصال
+              </button>
+            )}
+
+            <button
+              onClick={testDriver}
+              className="w-full bg-gray-500 text-white py-2 px-4 rounded-lg hover:bg-gray-600 transition-colors font-medium text-sm"
+            >
+              تست درایور PKCS#11
+            </button>
+          </div>
+
+          <div className="mt-4 p-3 bg-gray-50 rounded-lg text-xs text-gray-600">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>
+              <span>وضعیت: قطع شده</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Access Denied State
+  if (status === 'denied' || status === 'error') {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-50 p-4">
+        <div className="text-center p-8 bg-white rounded-xl shadow-lg max-w-md w-full">
+          <div className="mb-6">
+            <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-10 h-10 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 15c-.77.833.192 2.5 1.732 2.5z" />
+              </svg>
+            </div>
+          </div>
+
           <div className="mb-8">
             <h2 className="text-2xl font-bold text-gray-900 mb-3">
-              {status === 'error' ? '⚠️ خطای سیستمی' : '🔒 دسترسی محدود'}
+              {status === 'error' ? 'خطای سیستمی' : 'دسترسی محدود'}
             </h2>
             
             <div className="text-gray-600 leading-relaxed space-y-2">
@@ -254,19 +539,9 @@ const TokenGuard = ({ children }) => {
               ) : (
                 <p>برای استفاده از این سیستم، توکن امنیتی باید متصل و معتبر باشد.</p>
               )}
-              
-              {lastVerification && (
-                <div className="mt-4 text-xs text-gray-500 bg-gray-50 rounded p-2">
-                  <strong>آخرین تلاش:</strong> {new Date(lastVerification.timestamp).toLocaleString('fa-IR')}<br />
-                  {lastVerification.details && (
-                    <span><strong>جزئیات:</strong> {lastVerification.details}</span>
-                  )}
-                </div>
-              )}
             </div>
           </div>
 
-          {/* Action Buttons */}
           <div className="space-y-3">
             <button
               onClick={() => verifyToken()}
@@ -279,62 +554,23 @@ const TokenGuard = ({ children }) => {
                   در حال تلاش مجدد...
                 </span>
               ) : (
-                '🔄 تلاش مجدد'
+                'تلاش مجدد'
               )}
             </button>
 
-            {/* Auto-retry button for persistent errors */}
-            {retryCount > 0 && !isRetrying && (
-              <button
-                onClick={retryVerification}
-                className="w-full bg-yellow-500 text-white py-2 px-4 rounded-lg hover:bg-yellow-600 transition-colors font-medium text-sm"
-              >
-                🔁 تلاش مجدد خودکار ({retryCount} بار تلاش شده)
-              </button>
-            )}
-
-            {/* Driver test button */}
             <button
               onClick={testDriver}
               className="w-full bg-gray-500 text-white py-2 px-4 rounded-lg hover:bg-gray-600 transition-colors font-medium text-sm"
             >
-              🔧 تست درایور PKCS#11
+              تست درایور PKCS#11
             </button>
           </div>
-
-          {/* Help Text */}
-          <div className="mt-6 text-gray-400 text-sm space-y-1">
-            <p>💡 راهنمایی:</p>
-            <ul className="text-xs space-y-1 text-right">
-              <li>• توکن سخت‌افزاری را به کامپیوتر وصل کنید</li>
-              <li>• مطمئن شوید درایور PKCS#11 نصب است</li>
-              <li>• PIN توکن را صحیح وارد کرده‌اید</li>
-              <li>• کلید مورد نظر روی توکن موجود است</li>
-            </ul>
-          </div>
-
-          {/* Technical Details (collapsible) */}
-          {tokenInfo && (
-            <details className="mt-4 text-left">
-              <summary className="cursor-pointer text-xs text-gray-500 hover:text-gray-700">
-                جزئیات فنی
-              </summary>
-              <div className="mt-2 text-xs bg-gray-50 rounded p-2 space-y-1">
-                <div><strong>درایور:</strong> {tokenInfo.driverPath || 'نامشخص'}</div>
-                <div><strong>وضعیت:</strong> {tokenInfo.isInitialized ? 'آماده' : 'غیرآماده'}</div>
-                <div><strong>PKCS#11:</strong> {tokenInfo.grapheneAvailable ? 'موجود' : 'غیرموجود'}</div>
-                {lastVerification && (
-                  <div><strong>آخرین تایید:</strong> {lastVerification.success ? '✓ موفق' : '✗ ناموفق'}</div>
-                )}
-              </div>
-            </details>
-          )}
         </div>
       </div>
     );
   }
 
-  // Access Granted - Enhanced Status Bar
+  // Access Granted - Success State
   return (
     <>
       <div className="bg-gradient-to-r from-green-100 to-emerald-100 border-b border-green-200 px-4 py-3 shadow-sm">
@@ -347,26 +583,14 @@ const TokenGuard = ({ children }) => {
               </svg>
             </div>
             <span className="text-green-800 font-medium">دسترسی امن فعال</span>
-            {lastVerification && (
-              <span className="text-green-700 text-sm">
-                (آخرین تایید: {new Date(lastVerification.timestamp).toLocaleTimeString('fa-IR')})
-              </span>
-            )}
           </div>
           
           <div className="flex items-center space-x-4 rtl:space-x-reverse">
-            {/* Token info */}
-            {tokenInfo && (
-              <div className="text-green-700 text-xs">
-                {tokenInfo.driverPath && (
-                  <span title={tokenInfo.driverPath}>
-                    📱 {tokenInfo.driverPath.split('/').pop()}
-                  </span>
-                )}
-              </div>
-            )}
+            <div className="flex items-center space-x-2 rtl:space-x-reverse text-green-700 text-sm">
+              <div className={`w-2 h-2 rounded-full ${hardwareConnected ? 'bg-green-500' : 'bg-yellow-500'}`}></div>
+              <span>{hardwareConnected ? 'سخت‌افزار متصل' : 'بررسی سخت‌افزار'}</span>
+            </div>
             
-            {/* Manual refresh button */}
             <button
               onClick={() => verifyToken(false)}
               className="text-green-700 hover:text-green-900 p-1 rounded hover:bg-green-200 transition-colors"
@@ -378,7 +602,7 @@ const TokenGuard = ({ children }) => {
             </button>
             
             <div className="text-green-700 text-sm font-medium">
-              🔐 محافظت شده
+              محافظت شده
             </div>
           </div>
         </div>

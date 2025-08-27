@@ -659,144 +659,162 @@ export default function ImageSimilaritySearch() {
 
   // Enhanced search function
   const searchSimilarImages = useCallback(async () => {
-  if (!selectedImage) {
-    setError('لطفاً ابتدا یک تصویر انتخاب کنید');
-    return;
-  }
-
-  if (connectionStatus !== 'connected') {
-    setError('اتصال به سرور برقرار نیست. لطفاً اتصال اینترنت و آدرس سرور را بررسی کنید.');
-    return;
-  }
-
-  setIsLoading(true);
-  setError(null);
-  setSuccess(null);
-  saveSettings();
-
-  try {
-    const formData = new FormData();
-    
-    let fileToUpload = selectedImage.file;
-    
-    if (!fileToUpload && selectedImage.url) {
-      fileToUpload = base64ToFile(selectedImage.url, selectedImage.name, selectedImage.type);
+    if (!selectedImage) {
+      setError("لطفاً ابتدا یک تصویر انتخاب کنید");
+      return;
     }
-    
-    if (!fileToUpload) {
-      throw new Error('فایل تصویر موجود نیست');
-    }
-    
-    // مطابق با API schema: query_image نه image
-    formData.append('query_image', fileToUpload);
-    formData.append('threshold', threshold.toString());
-    formData.append('k', maxResults.toString());
-    formData.append('return_images', 'true');
 
-    console.log('=== SEARCH DEBUG ===');
-    console.log('FormData contents:');
-    for (let [key, value] of formData.entries()) {
-      if (value instanceof File) {
-        console.log(`${key}: File(${value.name}, ${value.size} bytes, ${value.type})`);
-      } else {
-        console.log(`${key}: ${value}`);
+    if (connectionStatus !== "connected") {
+      setError(
+        "اتصال به سرور برقرار نیست. لطفاً اتصال اینترنت و آدرس سرور را بررسی کنید."
+      );
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+    setSuccess(null);
+    saveSettings();
+
+    try {
+      const formData = new FormData();
+
+      let fileToUpload = selectedImage.file;
+
+      if (!fileToUpload && selectedImage.url) {
+        fileToUpload = base64ToFile(
+          selectedImage.url,
+          selectedImage.name,
+          selectedImage.type
+        );
       }
-    }
-    console.log('API URL:', `${apiUrl}/api/search`);
 
-    console.log('Using standard fetch for FormData...');
-    const response = await fetch(`${apiUrl}/api/search`, {
-      method: 'POST',
-      body: formData,
-      // No Content-Type header - let browser set it with boundary
-    });
+      if (!fileToUpload) {
+        throw new Error("فایل تصویر موجود نیست");
+      }
 
-    console.log('Response status:', response.status);
-    console.log('Response OK:', response.ok);
+      // مطابق با API schema: query_image نه image
+      formData.append("query_image", fileToUpload);
+      formData.append("threshold", threshold.toString());
+      formData.append("k", maxResults.toString());
+      formData.append("return_images", "true");
 
-    if (!response.ok) {
-      let errorText;
-      try {
-        errorText = await response.text();
-        console.error('Server error response:', errorText);
-        
-        // Try to parse as JSON to get detailed error
-        try {
-          const errorJson = JSON.parse(errorText);
-          if (errorJson.detail && Array.isArray(errorJson.detail)) {
-            const validationErrors = errorJson.detail.map(err => 
-              `${err.loc.join('.')}: ${err.msg}`
-            ).join(', ');
-            throw new Error(`خطای validation: ${validationErrors}`);
-          }
-        } catch (parseError) {
-          // If not JSON, use raw text
+      console.log("=== SEARCH DEBUG ===");
+      console.log("FormData contents:");
+      for (let [key, value] of formData.entries()) {
+        if (value instanceof File) {
+          console.log(
+            `${key}: File(${value.name}, ${value.size} bytes, ${value.type})`
+          );
+        } else {
+          console.log(`${key}: ${value}`);
         }
-      } catch (textError) {
-        errorText = 'Unable to read error response';
       }
-      
-      throw new Error(`خطای سرور: ${response.status} - ${errorText}`);
-    }
+      console.log("API URL:", `${apiUrl}/api/search`);
 
-    const result = await response.json();
-    console.log('Search result:', result);
-    
-    setSearchResults(result.results || []);
-    
-    if (result.results && result.results.length > 0) {
-      setSuccess(`${result.total_results || result.results.length} تصویر مشابه یافت شد`);
-      
-      // Log search activity
+      console.log("Using standard fetch for FormData...");
+      const response = await fetch(`${apiUrl}/api/search`, {
+        method: "POST",
+        body: formData,
+        // No Content-Type header - let browser set it with boundary
+      });
+
+      console.log("Response status:", response.status);
+      console.log("Response OK:", response.ok);
+
+      if (!response.ok) {
+        let errorText;
+        try {
+          errorText = await response.text();
+          console.error("Server error response:", errorText);
+
+          // Try to parse as JSON to get detailed error
+          try {
+            const errorJson = JSON.parse(errorText);
+            if (errorJson.detail && Array.isArray(errorJson.detail)) {
+              const validationErrors = errorJson.detail
+                .map((err) => `${err.loc.join(".")}: ${err.msg}`)
+                .join(", ");
+              throw new Error(`خطای validation: ${validationErrors}`);
+            }
+          } catch (parseError) {
+            // If not JSON, use raw text
+          }
+        } catch (textError) {
+          errorText = "Unable to read error response";
+        }
+
+        throw new Error(`خطای سرور: ${response.status} - ${errorText}`);
+      }
+
+      const result = await response.json();
+      console.log("Search result:", result);
+
+      setSearchResults(result.results || []);
+
+      if (result.results && result.results.length > 0) {
+        setSuccess(
+          `${result.total_results || result.results.length} تصویر مشابه یافت شد`
+        );
+
+        // Log search activity
+        if (window.commandLogger) {
+          window.commandLogger.log("info", "Image search completed", {
+            resultsCount: result.results.length,
+            threshold,
+            maxResults,
+          });
+        }
+      } else {
+        setSuccess("جستجو انجام شد اما تصویر مشابهی یافت نشد");
+      }
+    } catch (error) {
+      console.error("=== SEARCH ERROR ===");
+      console.error("Error details:", error);
+      console.error("Error message:", error.message);
+      console.error("Error stack:", error.stack);
+
+      let errorMessage = "خطا در جستجو";
+
+      if (error.message.includes("422")) {
+        errorMessage = "خطای validation - لطفاً پارامترهای جستجو را بررسی کنید";
+      } else if (error.message.includes("CORS")) {
+        errorMessage = "خطای CORS - لطفاً تنظیمات سرور را بررسی کنید";
+      } else if (error.message.includes("fetch")) {
+        errorMessage = "خطای شبکه - لطفاً اتصال اینترنت را بررسی کنید";
+      } else {
+        errorMessage = `خطا در جستجو: ${error.message}`;
+      }
+
+      setError(errorMessage);
+
       if (window.commandLogger) {
-        window.commandLogger.log('info', 'Image search completed', {
-          resultsCount: result.results.length,
+        window.commandLogger.log("error", "Image search failed", {
+          error: error.message,
+          apiUrl,
           threshold,
-          maxResults
+          maxResults,
+          selectedImageInfo: {
+            name: selectedImage?.name,
+            size: selectedImage?.size,
+            type: selectedImage?.type,
+            hasFile: !!selectedImage?.file,
+            hasUrl: !!selectedImage?.url,
+          },
         });
       }
-    } else {
-      setSuccess('جستجو انجام شد اما تصویر مشابهی یافت نشد');
+    } finally {
+      setIsLoading(false);
     }
-  } catch (error) {
-    console.error('=== SEARCH ERROR ===');
-    console.error('Error details:', error);
-    console.error('Error message:', error.message);
-    console.error('Error stack:', error.stack);
-    
-    let errorMessage = 'خطا در جستجو';
-    
-    if (error.message.includes('422')) {
-      errorMessage = 'خطای validation - لطفاً پارامترهای جستجو را بررسی کنید';
-    } else if (error.message.includes('CORS')) {
-      errorMessage = 'خطای CORS - لطفاً تنظیمات سرور را بررسی کنید';
-    } else if (error.message.includes('fetch')) {
-      errorMessage = 'خطای شبکه - لطفاً اتصال اینترنت را بررسی کنید';
-    } else {
-      errorMessage = `خطا در جستجو: ${error.message}`;
-    }
-    
-    setError(errorMessage);
-    
-    if (window.commandLogger) {
-      window.commandLogger.log('error', 'Image search failed', {
-        error: error.message,
-        apiUrl,
-        threshold,
-        maxResults,
-        selectedImageInfo: {
-          name: selectedImage?.name,
-          size: selectedImage?.size,
-          type: selectedImage?.type,
-          hasFile: !!selectedImage?.file,
-          hasUrl: !!selectedImage?.url
-        }
-      });
-    }
-  } finally {
-    setIsLoading(false);
-  }
-}, [selectedImage, connectionStatus, apiUrl, threshold, maxResults, base64ToFile, saveSettings]);
+  }, [
+    selectedImage,
+    connectionStatus,
+    apiUrl,
+    threshold,
+    maxResults,
+    base64ToFile,
+    saveSettings,
+  ]);
 
   // Remove selected image
   const removeImage = useCallback(() => {

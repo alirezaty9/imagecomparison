@@ -13,7 +13,7 @@ import fs from "fs/promises";
 import os from "os";
 import { randomBytes, createVerify } from "crypto";
 import { exec } from "node:child_process";
-import FormData from 'form-data';
+import FormData from "form-data";
 
 // Conditional import for PKCS#11
 let graphene = null;
@@ -35,12 +35,12 @@ let usbModule = null;
 // Initialize USB module
 async function initializeUSB() {
   try {
-    const usbImport = await import('usb');
+    const usbImport = await import("usb");
     usbModule = usbImport.default || usbImport.usb || usbImport;
-    console.log('USB module loaded successfully');
+    console.log("USB module loaded successfully");
     return true;
   } catch (error) {
-    console.warn('USB module not available:', error.message);
+    console.warn("USB module not available:", error.message);
     return false;
   }
 }
@@ -51,8 +51,8 @@ const getDriverPath = () => {
     case "win32":
       return [
         "C:\\Windows\\System32\\shuttle_p11.dll",
-        "C:\\Program Files\\ShuttleCSP\\shuttle_p11.dll",
-        "C:\\Program Files (x86)\\ShuttleCSP\\shuttle_p11.dll",
+        "C:\\ProgramFiles\\ShuttleCSP\\shuttle_p11.dll",
+        "C:\\ProgramFiles(x86)\\ShuttleCSP\\shuttle_p11.dll",
       ];
     case "linux":
       return [
@@ -85,6 +85,13 @@ EwIDAQAB
   KEY_LABEL: "ImageCompareKey",
   DEFAULT_PIN: process.env.TOKEN_PIN || "1234",
   SIGNATURE_MECHANISM: "SHA256_RSA_PKCS",
+  // Enhanced token configuration
+  ALLOWED_TOKENS: [
+    { vendorId: 0x096e, productId: 0x0703 }, // Feitian ePass3003
+    // Add more allowed tokens here as needed
+  ],
+  TOKEN_CHECK_INTERVAL: 2000, // Check token every 2 seconds
+  VERIFICATION_CACHE_TIME: 5 * 60 * 1000, // 5 minutes cache
 };
 
 // ====================================================================
@@ -96,6 +103,7 @@ class Pkcs11TokenManager {
     this.lastVerification = null;
     this.availableDriverPath = null;
     this.isInitialized = false;
+    this.verificationCache = new Map();
   }
 
   async findAvailableDriver() {
@@ -190,11 +198,25 @@ class Pkcs11TokenManager {
     return objects.items(0);
   }
 
-  async performTokenVerification(customPin = null) {
+  // Enhanced verification with caching and better error handling
+  async performTokenVerification(customPin = null, forceRefresh = false) {
     let session = null;
     let mod = null;
 
     try {
+      // Check cache first (unless force refresh)
+      if (!forceRefresh && this.lastVerification) {
+        const cacheAge =
+          Date.now() - new Date(this.lastVerification.timestamp).getTime();
+        if (
+          cacheAge < CONFIG.VERIFICATION_CACHE_TIME &&
+          this.lastVerification.success
+        ) {
+          console.log("استفاده از نتیجه تایید کش شده");
+          return this.lastVerification;
+        }
+      }
+
       await this.initialize();
       console.log("شروع تایید توکن...");
 
@@ -260,7 +282,9 @@ class Pkcs11TokenManager {
           challengeSize: challenge.length,
           signatureSize: signature.length,
           publicKeyMatch: true,
-        }
+          slotDescription: slot.slotDescription,
+          driverPath: this.availableDriverPath,
+        },
       };
 
       this.lastVerification = result;
@@ -277,6 +301,7 @@ class Pkcs11TokenManager {
         message: friendlyMessage,
         details: error.message,
         timestamp: new Date().toISOString(),
+        errorCode: error.code || null,
       };
 
       this.lastVerification = result;
@@ -321,7 +346,9 @@ class Pkcs11TokenManager {
         case 0x00000003:
           return "شناسه اسلات نامعتبر است.";
         default:
-          return `خطای PKCS#11 با کد ${error.code.toString(16)}: ${error.message}`;
+          return `خطای PKCS#11 با کد ${error.code.toString(16)}: ${
+            error.message
+          }`;
       }
     }
 
@@ -363,16 +390,16 @@ class Pkcs11TokenManager {
 }
 
 // ====================================================================
-// SECTION 3: HARDWARE TOKEN MANAGER (USB Detection)
+// SECTION 3: ENHANCED HARDWARE TOKEN MANAGER (USB Detection)
 // ====================================================================
 
 class HardwareTokenManager {
   constructor() {
     this.connectedTokens = new Set();
-    this.allowedTokens = [
-      { vendorId: 0x096e, productId: 0x0703 } // Feitian token
-    ];
+    this.allowedTokens = CONFIG.ALLOWED_TOKENS;
     this.usbEnabled = false;
+    this.monitoringInterval = null;
+    this.lastKnownTokens = new Set();
   }
 
   async initialize() {
@@ -380,9 +407,12 @@ class HardwareTokenManager {
       this.usbEnabled = await initializeUSB();
       if (this.usbEnabled) {
         this.setupUSBListeners();
+        this.startMonitoring();
+        // Initial scan
+        this.checkAllConnectedDevices();
       }
     } catch (error) {
-      console.error('Error initializing USB token manager:', error);
+      console.error("Error initializing USB token manager:", error);
     }
   }
 
@@ -391,38 +421,115 @@ class HardwareTokenManager {
 
     try {
       const usb = usbModule.usb || usbModule;
-      
-      if (typeof usb.on === 'function') {
-        usb.on('attach', (device) => this.handleDeviceConnect(device));
-        usb.on('detach', (device) => this.handleDeviceDisconnect(device));
+
+      if (typeof usb.on === "function") {
+        usb.on("attach", (device) => this.handleDeviceConnect(device));
+        usb.on("detach", (device) => this.handleDeviceDisconnect(device));
       }
     } catch (error) {
-      console.error('Error setting up USB listeners:', error);
+      console.error("Error setting up USB listeners:", error);
+    }
+  }
+
+  // Enhanced monitoring with periodic checks
+  startMonitoring() {
+    if (this.monitoringInterval) {
+      clearInterval(this.monitoringInterval);
+    }
+
+    this.monitoringInterval = setInterval(() => {
+      this.periodicTokenCheck();
+    }, CONFIG.TOKEN_CHECK_INTERVAL);
+  }
+
+  stopMonitoring() {
+    if (this.monitoringInterval) {
+      clearInterval(this.monitoringInterval);
+      this.monitoringInterval = null;
+    }
+  }
+
+  // Periodic check to detect state changes
+  periodicTokenCheck() {
+    try {
+      const currentTokens = this.checkAllConnectedDevices();
+      const currentTokenSet = new Set(
+        currentTokens.map((t) => `${t.vendorId}:${t.productId}`)
+      );
+
+      // Check for newly connected tokens
+      currentTokenSet.forEach((tokenKey) => {
+        if (!this.lastKnownTokens.has(tokenKey)) {
+          const [vendorId, productId] = tokenKey
+            .split(":")
+            .map((id) => parseInt(id));
+          console.log(`Token connected via periodic check: ${tokenKey}`);
+          this.handleTokenConnection(vendorId, productId);
+        }
+      });
+
+      // Check for disconnected tokens
+      this.lastKnownTokens.forEach((tokenKey) => {
+        if (!currentTokenSet.has(tokenKey)) {
+          const [vendorId, productId] = tokenKey
+            .split(":")
+            .map((id) => parseInt(id));
+          console.log(`Token disconnected via periodic check: ${tokenKey}`);
+          this.handleTokenDisconnection(vendorId, productId);
+        }
+      });
+
+      this.lastKnownTokens = currentTokenSet;
+    } catch (error) {
+      console.error("Error in periodic token check:", error);
     }
   }
 
   handleDeviceConnect(device) {
     const { idVendor, idProduct } = device.deviceDescriptor;
-    const isAllowed = this.allowedTokens.some(
-      token => token.vendorId === idVendor && token.productId === idProduct
-    );
-
-    if (isAllowed) {
-      this.connectedTokens.add(`${idVendor}:${idProduct}`);
-      if (mainWindow) {
-        mainWindow.webContents.send('token-connected', { vendorId: idVendor, productId: idProduct });
-      }
-    }
+    this.handleTokenConnection(idVendor, idProduct);
   }
 
   handleDeviceDisconnect(device) {
     const { idVendor, idProduct } = device.deviceDescriptor;
-    const tokenKey = `${idVendor}:${idProduct}`;
-    
+    this.handleTokenDisconnection(idVendor, idProduct);
+  }
+
+  handleTokenConnection(vendorId, productId) {
+    const isAllowed = this.allowedTokens.some(
+      (token) => token.vendorId === vendorId && token.productId === productId
+    );
+
+    if (isAllowed) {
+      const tokenKey = `${vendorId}:${productId}`;
+      this.connectedTokens.add(tokenKey);
+      console.log(`Allowed token connected: ${tokenKey}`);
+
+      if (mainWindow) {
+        mainWindow.webContents.send("token-connected", {
+          vendorId,
+          productId,
+          connected: true,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    }
+  }
+
+  handleTokenDisconnection(vendorId, productId) {
+    const tokenKey = `${vendorId}:${productId}`;
+
     if (this.connectedTokens.has(tokenKey)) {
       this.connectedTokens.delete(tokenKey);
+      console.log(`Token disconnected: ${tokenKey}`);
+
       if (mainWindow) {
-        mainWindow.webContents.send('token-disconnected', { vendorId: idVendor, productId: idProduct });
+        mainWindow.webContents.send("token-disconnected", {
+          vendorId,
+          productId,
+          connected: false,
+          timestamp: new Date().toISOString(),
+        });
       }
     }
   }
@@ -431,6 +538,7 @@ class HardwareTokenManager {
     return this.connectedTokens.has(`${vendorId}:${productId}`);
   }
 
+  // Enhanced device enumeration
   checkAllConnectedDevices() {
     if (!this.usbEnabled || !usbModule) return [];
 
@@ -439,23 +547,44 @@ class HardwareTokenManager {
       const devices = usb.getDeviceList();
       const connectedTokens = [];
 
-      devices.forEach(device => {
+      devices.forEach((device) => {
         const { idVendor, idProduct } = device.deviceDescriptor;
         const isAllowed = this.allowedTokens.some(
-          token => token.vendorId === idVendor && token.productId === idProduct
+          (token) =>
+            token.vendorId === idVendor && token.productId === idProduct
         );
 
         if (isAllowed) {
-          this.connectedTokens.add(`${idVendor}:${idProduct}`);
+          const tokenKey = `${idVendor}:${idProduct}`;
+          this.connectedTokens.add(tokenKey);
           connectedTokens.push({ vendorId: idVendor, productId: idProduct });
         }
       });
 
       return connectedTokens;
     } catch (error) {
-      console.error('Error checking connected devices:', error);
+      console.error("Error checking connected devices:", error);
       return [];
     }
+  }
+
+  // Check if any allowed token is connected
+  hasAnyAllowedTokenConnected() {
+    return this.connectedTokens.size > 0;
+  }
+
+  // Get list of currently connected allowed tokens
+  getConnectedTokens() {
+    return Array.from(this.connectedTokens).map((tokenKey) => {
+      const [vendorId, productId] = tokenKey
+        .split(":")
+        .map((id) => parseInt(id));
+      return { vendorId, productId };
+    });
+  }
+
+  shutdown() {
+    this.stopMonitoring();
   }
 }
 
@@ -479,7 +608,7 @@ function createWindow() {
       contextIsolation: true,
       preload: path.join(currentDir, "preload.js"),
       webSecurity: !app.isPackaged,
-      allowRunningInsecureContent: false
+      allowRunningInsecureContent: false,
     },
   });
 
@@ -494,31 +623,41 @@ function createWindow() {
 
   // CORS handling for development
   if (isDev) {
-    mainWindow.webContents.session.webRequest.onBeforeSendHeaders((details, callback) => {
-      callback({ requestHeaders: details.requestHeaders });
-    });
-
-    mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
-      if (details.responseHeaders) {
-        details.responseHeaders['Access-Control-Allow-Origin'] = ['*'];
-        details.responseHeaders['Access-Control-Allow-Methods'] = ['GET, POST, PUT, DELETE, OPTIONS'];
-        details.responseHeaders['Access-Control-Allow-Headers'] = ['*'];
+    mainWindow.webContents.session.webRequest.onBeforeSendHeaders(
+      (details, callback) => {
+        callback({ requestHeaders: details.requestHeaders });
       }
-      callback({ responseHeaders: details.responseHeaders });
-    });
+    );
+
+    mainWindow.webContents.session.webRequest.onHeadersReceived(
+      (details, callback) => {
+        if (details.responseHeaders) {
+          details.responseHeaders["Access-Control-Allow-Origin"] = ["*"];
+          details.responseHeaders["Access-Control-Allow-Methods"] = [
+            "GET, POST, PUT, DELETE, OPTIONS",
+          ];
+          details.responseHeaders["Access-Control-Allow-Headers"] = ["*"];
+        }
+        callback({ responseHeaders: details.responseHeaders });
+      }
+    );
   }
 
   mainWindow.once("ready-to-show", () => {
     mainWindow.show();
     if (isDev) mainWindow.focus();
 
-    // Initial hardware token check
+    // Initial hardware token check after window is ready
     setTimeout(() => {
       const connectedTokens = hardwareTokenManager.checkAllConnectedDevices();
       if (connectedTokens.length > 0) {
-        mainWindow.webContents.send('token-connected', connectedTokens[0]);
+        mainWindow.webContents.send("token-connected", {
+          ...connectedTokens[0],
+          connected: true,
+          timestamp: new Date().toISOString(),
+        });
       }
-    }, 1000);
+    }, 2000);
   });
 
   mainWindow.on("closed", () => {
@@ -540,7 +679,15 @@ function createMenu() {
               filters: [
                 {
                   name: "تصاویر",
-                  extensions: ["jpg", "jpeg", "png", "gif", "bmp", "webp", "tiff"],
+                  extensions: [
+                    "jpg",
+                    "jpeg",
+                    "png",
+                    "gif",
+                    "bmp",
+                    "webp",
+                    "tiff",
+                  ],
                 },
               ],
             });
@@ -551,7 +698,7 @@ function createMenu() {
         { type: "separator" },
         {
           label: "تست توکن امنیتی",
-          click: () => tokenManager.performTokenVerification(),
+          click: () => tokenManager.performTokenVerification(null, true), // Force refresh
         },
         {
           label: "تست درایور",
@@ -567,6 +714,29 @@ function createMenu() {
             });
           },
         },
+        {
+          label: "وضعیت سخت‌افزار",
+          click: () => {
+            const connectedTokens = hardwareTokenManager.getConnectedTokens();
+            const hasTokens =
+              hardwareTokenManager.hasAnyAllowedTokenConnected();
+
+            dialog.showMessageBox(mainWindow, {
+              type: hasTokens ? "info" : "warning",
+              title: "وضعیت سخت‌افزار",
+              message: hasTokens
+                ? `توکن‌های متصل: ${connectedTokens.length}\n${connectedTokens
+                    .map(
+                      (t) =>
+                        `VID:${t.vendorId.toString(
+                          16
+                        )} PID:${t.productId.toString(16)}`
+                    )
+                    .join("\n")}`
+                : "هیچ توکن مجازی متصل نیست",
+            });
+          },
+        },
         { type: "separator" },
         { label: "خروج", role: "quit" },
       ],
@@ -576,26 +746,40 @@ function createMenu() {
 }
 
 // ====================================================================
-// SECTION 5: IPC HANDLERS
+// SECTION 5: ENHANCED IPC HANDLERS
 // ====================================================================
 
-// Token Handlers
+// Enhanced Token Handlers
 ipcMain.handle("check-token-status", () => ({
   success: true,
-  data: tokenManager.getStatus(),
+  data: {
+    ...tokenManager.getStatus(),
+    hardwareConnected: hardwareTokenManager.hasAnyAllowedTokenConnected(),
+    connectedTokens: hardwareTokenManager.getConnectedTokens(),
+  },
 }));
 
 ipcMain.handle("verify-token", (event, options = {}) =>
-  tokenManager.performTokenVerification(options.pin)
+  tokenManager.performTokenVerification(
+    options.pin,
+    options.forceRefresh || false
+  )
 );
 
 ipcMain.handle("test-driver", () => tokenManager.testDriver());
 
-// Legacy compatibility
+// Enhanced hardware token handlers
 ipcMain.handle("check-hardware-token", async (event, vendorId, productId) => {
   try {
-    const isConnected = hardwareTokenManager.isTokenConnected(vendorId, productId);
-    return { success: true, connected: isConnected };
+    const isConnected = hardwareTokenManager.isTokenConnected(
+      vendorId,
+      productId
+    );
+    return {
+      success: true,
+      connected: isConnected,
+      allConnectedTokens: hardwareTokenManager.getConnectedTokens(),
+    };
   } catch (error) {
     return { success: false, error: error.message, connected: false };
   }
@@ -604,18 +788,36 @@ ipcMain.handle("check-hardware-token", async (event, vendorId, productId) => {
 ipcMain.handle("request-token-access", async (event, vendorId, productId) => {
   try {
     const connectedTokens = hardwareTokenManager.checkAllConnectedDevices();
-    const isConnected = hardwareTokenManager.isTokenConnected(vendorId, productId);
-    return { success: true, connected: isConnected };
+    const isConnected = hardwareTokenManager.isTokenConnected(
+      vendorId,
+      productId
+    );
+    return {
+      success: true,
+      connected: isConnected,
+      availableTokens: connectedTokens,
+    };
   } catch (error) {
     return { success: false, error: error.message };
   }
 });
 
+// Legacy compatibility with enhanced functionality
 ipcMain.handle("sign-and-verify-file", async (event, options = {}) => {
-  return await tokenManager.performTokenVerification(options.pin);
+  // First check if hardware token is connected
+  const hasHardware = hardwareTokenManager.hasAnyAllowedTokenConnected();
+  if (!hasHardware) {
+    return {
+      success: false,
+      message: "هیچ توکن سخت‌افزاری مجاز متصل نیست",
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  return await tokenManager.performTokenVerification(options.pin, true);
 });
 
-// File System Handlers
+// File System Handlers (unchanged)
 ipcMain.handle("create-file", async (event, fileName, content) => {
   try {
     const filePath = path.join(os.homedir(), "Desktop", fileName);
@@ -647,7 +849,7 @@ ipcMain.handle("select-image-files", async () => {
       ],
     });
     if (result.canceled) return { success: false, canceled: true };
-    
+
     const fileData = await Promise.all(
       result.filePaths.map(async (filePath) => {
         const data = await fs.readFile(filePath);
@@ -679,7 +881,7 @@ ipcMain.handle("compare-images", async (event, imageData) => ({
         percentage: Math.floor(Math.random() * 100),
       },
       {
-        targetImage: "Reference 2", 
+        targetImage: "Reference 2",
         percentage: Math.floor(Math.random() * 100),
       },
     ].sort((a, b) => b.percentage - a.percentage),
@@ -715,183 +917,201 @@ ipcMain.handle("open-external", async (event, url) => {
 });
 
 // ENHANCED API REQUEST HANDLER - WITH FORMDATA SUPPORT
-ipcMain.handle("api-request", async (event, { url, method = "GET", headers = {}, body = null }) => {
-  try {
-    const fullUrl = url.startsWith('http') ? url : `http://192.168.88.69:8000${url}`;
-    
-    console.log('=== API REQUEST DEBUG ===');
-    console.log('URL:', fullUrl);
-    console.log('Method:', method);
-    console.log('Headers:', headers);
-    console.log('Body type:', typeof body);
-    
-    // Handle FormData from renderer
-    if (body && typeof body === 'object' && body.formData && body.files) {
-      console.log('Processing FormData request...');
-      console.log('FormData fields:', Object.keys(body.formData));
-      console.log('Files:', Object.keys(body.files));
-      
-      // Create form-data instance
-      const formData = new FormData();
-      
-      // Add regular form fields
-      Object.entries(body.formData).forEach(([key, value]) => {
-        console.log(`Adding field: ${key} = ${value}`);
-        formData.append(key, value);
-      });
-      
-      // Add files
-      Object.entries(body.files).forEach(([key, fileInfo]) => {
-        console.log(`Adding file: ${key} - ${fileInfo.name} (${fileInfo.size} bytes, ${fileInfo.type})`);
-        
-        // Convert base64 back to buffer
-        const base64Data = fileInfo.data.split(',')[1];
-        const buffer = Buffer.from(base64Data, 'base64');
-        
-        formData.append(key, buffer, {
-          filename: fileInfo.name,
-          contentType: fileInfo.type
+ipcMain.handle(
+  "api-request",
+  async (event, { url, method = "GET", headers = {}, body = null }) => {
+    try {
+      const fullUrl = url.startsWith("http")
+        ? url
+        : `http://192.168.88.69:8000${url}`;
+
+      console.log("=== API REQUEST DEBUG ===");
+      console.log("URL:", fullUrl);
+      console.log("Method:", method);
+      console.log("Headers:", headers);
+      console.log("Body type:", typeof body);
+
+      // Handle FormData from renderer
+      if (body && typeof body === "object" && body.formData && body.files) {
+        console.log("Processing FormData request...");
+        console.log("FormData fields:", Object.keys(body.formData));
+        console.log("Files:", Object.keys(body.files));
+
+        // Create form-data instance
+        const formData = new FormData();
+
+        // Add regular form fields
+        Object.entries(body.formData).forEach(([key, value]) => {
+          console.log(`Adding field: ${key} = ${value}`);
+          formData.append(key, value);
         });
-      });
-      
-      // Use form-data for the request
+
+        // Add files
+        Object.entries(body.files).forEach(([key, fileInfo]) => {
+          console.log(
+            `Adding file: ${key} - ${fileInfo.name} (${fileInfo.size} bytes, ${fileInfo.type})`
+          );
+
+          // Convert base64 back to buffer
+          const base64Data = fileInfo.data.split(",")[1];
+          const buffer = Buffer.from(base64Data, "base64");
+
+          formData.append(key, buffer, {
+            filename: fileInfo.name,
+            contentType: fileInfo.type,
+          });
+        });
+
+        // Use form-data for the request
+        const request = net.request({
+          method,
+          url: fullUrl,
+          headers: {
+            ...formData.getHeaders(),
+            ...headers,
+          },
+        });
+
+        return new Promise((resolve) => {
+          let responseData = "";
+
+          request.on("response", (response) => {
+            console.log("FormData response status:", response.statusCode);
+            console.log("FormData response headers:", response.headers);
+
+            response.on("data", (chunk) => {
+              responseData += chunk;
+            });
+
+            response.on("end", () => {
+              console.log(
+                "FormData response data length:",
+                responseData.length
+              );
+              console.log(
+                "FormData response preview:",
+                responseData.substring(0, 200)
+              );
+
+              try {
+                const data = responseData ? JSON.parse(responseData) : null;
+                resolve({
+                  success: true,
+                  data,
+                  status: response.statusCode,
+                  headers: response.headers,
+                });
+              } catch (error) {
+                console.log(
+                  "FormData response parse error, returning raw data"
+                );
+                resolve({
+                  success: true,
+                  data: responseData,
+                  status: response.statusCode,
+                  headers: response.headers,
+                });
+              }
+            });
+          });
+
+          request.on("error", (error) => {
+            console.error("FormData request error:", error);
+            resolve({ success: false, error: error.message });
+          });
+
+          // Write the form data
+          formData.pipe(request);
+        });
+      }
+
+      // Regular JSON request handling
+      console.log("Processing regular JSON request...");
       const request = net.request({
         method,
         url: fullUrl,
         headers: {
-          ...formData.getHeaders(),
-          ...headers
-        }
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+          "Access-Control-Allow-Headers": "*",
+          ...headers,
+        },
       });
 
       return new Promise((resolve) => {
-        let responseData = '';
+        let responseData = "";
 
-        request.on('response', (response) => {
-          console.log('FormData response status:', response.statusCode);
-          console.log('FormData response headers:', response.headers);
-          
-          response.on('data', (chunk) => {
+        request.on("response", (response) => {
+          console.log("JSON response status:", response.statusCode);
+
+          response.on("data", (chunk) => {
             responseData += chunk;
           });
 
-          response.on('end', () => {
-            console.log('FormData response data length:', responseData.length);
-            console.log('FormData response preview:', responseData.substring(0, 200));
-            
+          response.on("end", () => {
             try {
               const data = responseData ? JSON.parse(responseData) : null;
-              resolve({ 
-                success: true, 
-                data, 
+              resolve({
+                success: true,
+                data,
                 status: response.statusCode,
-                headers: response.headers 
+                headers: response.headers,
               });
             } catch (error) {
-              console.log('FormData response parse error, returning raw data');
-              resolve({ 
-                success: true, 
-                data: responseData, 
+              resolve({
+                success: true,
+                data: responseData,
                 status: response.statusCode,
-                headers: response.headers 
+                headers: response.headers,
               });
             }
           });
         });
 
-        request.on('error', (error) => {
-          console.error('FormData request error:', error);
+        request.on("error", (error) => {
+          console.error("JSON request error:", error);
           resolve({ success: false, error: error.message });
         });
 
-        // Write the form data
-        formData.pipe(request);
+        if (body && method !== "GET") {
+          const bodyString =
+            typeof body === "string" ? body : JSON.stringify(body);
+          console.log("Writing body:", bodyString.substring(0, 100) + "...");
+          request.write(bodyString);
+        }
+        request.end();
       });
+    } catch (error) {
+      console.error("API request handler error:", error);
+      return { success: false, error: error.message };
     }
-    
-    // Regular JSON request handling
-    console.log('Processing regular JSON request...');
-    const request = net.request({
-      method,
-      url: fullUrl,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': '*',
-        ...headers
-      }
-    });
-
-    return new Promise((resolve) => {
-      let responseData = '';
-
-      request.on('response', (response) => {
-        console.log('JSON response status:', response.statusCode);
-        
-        response.on('data', (chunk) => {
-          responseData += chunk;
-        });
-
-        response.on('end', () => {
-          try {
-            const data = responseData ? JSON.parse(responseData) : null;
-            resolve({ 
-              success: true, 
-              data, 
-              status: response.statusCode,
-              headers: response.headers 
-            });
-          } catch (error) {
-            resolve({ 
-              success: true, 
-              data: responseData, 
-              status: response.statusCode,
-              headers: response.headers 
-            });
-          }
-        });
-      });
-
-      request.on('error', (error) => {
-        console.error('JSON request error:', error);
-        resolve({ success: false, error: error.message });
-      });
-
-      if (body && method !== 'GET') {
-        const bodyString = typeof body === 'string' ? body : JSON.stringify(body);
-        console.log('Writing body:', bodyString.substring(0, 100) + '...');
-        request.write(bodyString);
-      }
-      request.end();
-    });
-  } catch (error) {
-    console.error('API request handler error:', error);
-    return { success: false, error: error.message };
   }
-});
+);
 
 // Command execution handler
-ipcMain.handle('run-test123-command', async (event, commandArgs = '') => {
+ipcMain.handle("run-test123-command", async (event, commandArgs = "") => {
   return new Promise((resolve) => {
-    const fullCommand = commandArgs ? `/usr/local/bin/test123 ${commandArgs}` : '/usr/local/bin/test123 --help';
-    
+    const fullCommand = commandArgs
+      ? `/usr/local/bin/test123 ${commandArgs}`
+      : "/usr/local/bin/test123 --help";
+
     const execOptions = {
-      env: { 
-        ...process.env, 
-        PATH: process.env.PATH + ':/usr/local/bin:/usr/bin:/bin' 
-      }
+      env: {
+        ...process.env,
+        PATH: process.env.PATH + ":/usr/local/bin:/usr/bin:/bin",
+      },
     };
-    
+
     exec(fullCommand, execOptions, (error, stdout, stderr) => {
       if (error) {
-        resolve({ 
-          success: false, 
-          error: error.message, 
-          stdout: '', 
+        resolve({
+          success: false,
+          error: error.message,
+          stdout: "",
           stderr,
           command: fullCommand,
-          path: process.env.PATH 
+          path: process.env.PATH,
         });
       } else {
         resolve({ success: true, stdout, stderr, error: null });
@@ -901,7 +1121,7 @@ ipcMain.handle('run-test123-command', async (event, commandArgs = '') => {
 });
 
 // ====================================================================
-// SECTION 6: APPLICATION LIFECYCLE
+// SECTION 6: ENHANCED APPLICATION LIFECYCLE
 // ====================================================================
 
 app.commandLine.appendSwitch("no-sandbox");
@@ -910,7 +1130,8 @@ app.whenReady().then(async () => {
   console.log("شروع راه‌اندازی برنامه...");
 
   try {
-    // Initialize hardware token manager
+    // Initialize hardware token manager first
+    console.log("راه‌اندازی مدیریت سخت‌افزار...");
     await hardwareTokenManager.initialize();
 
     // Test driver availability (non-blocking)
@@ -926,7 +1147,6 @@ app.whenReady().then(async () => {
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
     });
-
   } catch (error) {
     console.error("خطای بحرانی در راه‌اندازی:", error);
     dialog.showErrorBox(
@@ -938,5 +1158,17 @@ app.whenReady().then(async () => {
 });
 
 app.on("window-all-closed", () => {
+  // Clean shutdown
+  hardwareTokenManager.shutdown();
   if (process.platform !== "darwin") app.quit();
+});
+
+// Handle app termination
+app.on("before-quit", () => {
+  hardwareTokenManager.shutdown();
+});
+
+// Handle system shutdown/suspend
+app.on("will-quit", (event) => {
+  hardwareTokenManager.shutdown();
 });

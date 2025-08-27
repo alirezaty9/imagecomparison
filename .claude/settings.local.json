@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./build-pkcs11.sh:*)",
+      "Bash(npm install)",
+      "Bash(rm:*)",
+      "Bash(npm run build:*)",
+      "Bash(npx electron:*)",
+      "Bash(npm install:*)",
+      "Bash(HOME=~/.electron-gyp node-gyp rebuild --target=37.2.1 --arch=x64 --dist-url=https://electronjs.org/headers)",
+      "Bash(HOME=~/.electron-gyp npx node-gyp rebuild --target=37.2.1 --arch=x64 --dist-url=https://electronjs.org/headers)",
+      "Bash(timeout 15s npm run dev)",
+      "Bash(mv:*)",
+      "Bash(timeout 20s npm run dev)",
+      "Bash(npm run dev:*)",
+      "Bash(npm run lint)"
+    ],
+    "deny": []
+  }
+}
