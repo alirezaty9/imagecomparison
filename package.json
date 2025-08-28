@@ -21,6 +21,7 @@
       "preload.js",
       "package.json",
       "assets/icons/**/*",
+      "Token/lib/**/*",
       "!node_modules/.cache"
     ],
     "directories": {

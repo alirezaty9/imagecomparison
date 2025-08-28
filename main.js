@@ -47,29 +47,39 @@ async function initializeUSB() {
 
 // تشخیص مسیر درایور بر اساس پلتفرم
 const getDriverPath = () => {
-  switch (process.platform) {
-    case "win32":
-      return [
-        "C:\\Windows\\System32\\shuttle_p11.dll",
-        "C:\\ProgramFiles\\ShuttleCSP\\shuttle_p11.dll",
-        "C:\\ProgramFiles(x86)\\ShuttleCSP\\shuttle_p11.dll",
-      ];
-    case "linux":
-      return [
-        path.join(currentDir, "Token", "lib", "libshuttle_p11v220.so.1.0.0"),
-        "/usr/local/lib/libshuttle_p11v220.so",
-        "/usr/lib/libshuttle_p11v220.so",
-        "/lib/libshuttle_p11v220.so",
-      ];
-    case "darwin":
-      return [
-        "/usr/local/lib/libshuttle_p11v220.dylib",
-        "/Library/Frameworks/ShuttleCSP.framework/ShuttleCSP",
-      ];
-    default:
-      return [];
-  }
+  // مسیرهای संभावित برای درایور بر اساس پلتفرم
+  const platformPaths = {
+    win32: [
+      // اولویت اول: درایور باندل شده با برنامه
+      path.join(currentDir, "Token", "lib", "win32", "shuttle_p11.dll"),
+      
+      // مسیرهای سیستمی (با استفاده از متغیرهای محیطی برای اطمینان)
+      path.join(process.env.SystemRoot || "C:\\Windows", "System32", "shuttle_p11.dll"),
+      
+      // مسیرهای Program Files برای نسخه‌های 64 و 32 بیتی
+      process.env.ProgramFiles
+        ? path.join(process.env.ProgramFiles, "ShuttleCSP", "shuttle_p11.dll")
+        : null,
+      process.env["ProgramFiles(x86)"]
+        ? path.join(process.env["ProgramFiles(x86)"], "ShuttleCSP", "shuttle_p11.dll")
+        : null,
+    ],
+    linux: [
+      path.join(currentDir, "Token", "lib", "libshuttle_p11v220.so.1.0.0"),
+      "/usr/local/lib/libshuttle_p11v220.so",
+      "/usr/lib/libshuttle_p11v220.so",
+      "/lib/libshuttle_p11v220.so",
+    ],
+    darwin: [
+      "/usr/local/lib/libshuttle_p11v220.dylib",
+      "/Library/Frameworks/ShuttleCSP.framework/ShuttleCSP",
+    ],
+  };
+
+  // مسیرهای پلتفرم فعلی را برمی‌گرداند و مسیرهای null را حذف می‌کند
+  return (platformPaths[process.platform] || []).filter(Boolean);
 };
+
 
 const CONFIG = {
   DRIVER_PATHS: getDriverPath(),
