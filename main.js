@@ -47,37 +47,36 @@ async function initializeUSB() {
 
 // تشخیص مسیر درایور بر اساس پلتفرم
 const getDriverPath = () => {
-  // مسیرهای संभावित برای درایور بر اساس پلتفرم
-  const platformPaths = {
-    win32: [
-      // اولویت اول: درایور باندل شده با برنامه
-      path.join(currentDir, "Token", "lib", "win32", "shuttle_p11.dll"),
-      
-      // مسیرهای سیستمی (با استفاده از متغیرهای محیطی برای اطمینان)
-      path.join(process.env.SystemRoot || "C:\\Windows", "System32", "shuttle_p11.dll"),
-      
-      // مسیرهای Program Files برای نسخه‌های 64 و 32 بیتی
-      process.env.ProgramFiles
-        ? path.join(process.env.ProgramFiles, "ShuttleCSP", "shuttle_p11.dll")
-        : null,
-      process.env["ProgramFiles(x86)"]
-        ? path.join(process.env["ProgramFiles(x86)"], "ShuttleCSP", "shuttle_p11.dll")
-        : null,
-    ],
-    linux: [
-      path.join(currentDir, "Token", "lib", "libshuttle_p11v220.so.1.0.0"),
-      "/usr/local/lib/libshuttle_p11v220.so",
-      "/usr/lib/libshuttle_p11v220.so",
-      "/lib/libshuttle_p11v220.so",
-    ],
-    darwin: [
-      "/usr/local/lib/libshuttle_p11v220.dylib",
-      "/Library/Frameworks/ShuttleCSP.framework/ShuttleCSP",
-    ],
-  };
+  const isProd = app.isPackaged;
+  const resourcesPath = process.resourcesPath; // مسیر پوشه resources در حالت نصب شده
+  const potentialPaths = [];
 
-  // مسیرهای پلتفرم فعلی را برمی‌گرداند و مسیرهای null را حذف می‌کند
-  return (platformPaths[process.platform] || []).filter(Boolean);
+  if (process.platform === 'win32') {
+    // اولویت ۱: درایور باندل شده در برنامه نصب شده
+    if (isProd) {
+      potentialPaths.push(path.join(resourcesPath, 'lib', 'win32', 'shuttle_p11.dll'));
+    }
+    // اولویت ۲: درایور در سورس کد برای محیط توسعه (dev)
+    potentialPaths.push(path.join(currentDir, 'Token', 'lib', 'win32', 'shuttle_p11.dll'));
+    // اولویت ۳: درایور نصب شده در سیستم به عنوان آخرین راه حل
+    potentialPaths.push(path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'shuttle_p11.dll'));
+
+  } else if (process.platform === 'linux') {
+    // اولویت ۱: درایور باندل شده در برنامه نصب شده
+    if (isProd) {
+      potentialPaths.push(path.join(resourcesPath, 'lib', 'libshuttle_p11v220.so.1.0.0'));
+    }
+    // اولویت ۲: درایور در سورس کد برای محیط توسعه (dev)
+    potentialPaths.push(path.join(currentDir, 'Token', 'lib', 'libshuttle_p11v220.so.1.0.0'));
+    // اولویت ۳: مسیرهای سیستمی
+    potentialPaths.push('/usr/local/lib/libshuttle_p11v220.so');
+    potentialPaths.push('/usr/lib/libshuttle_p11v220.so');
+  }
+
+  console.log('✅ مسیرهای در حال بررسی برای درایور:', potentialPaths);
+  
+  // مسیرهای null یا خالی را حذف کرده و نتیجه را برمی‌گرداند
+  return potentialPaths.filter(Boolean);
 };
 
 

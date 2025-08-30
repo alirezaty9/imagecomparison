@@ -10,81 +10,87 @@
   "homepage": "https://example.com",
   "type": "module",
   "main": "main.js",
-  "build": {
-    "appId": "com.alireza.imagecomparison",
-    "icon": "assets/icons/icon",
-    "productName": "ImageComparisonTool",
-    "executableName": "image-comparison-tool",
-    "files": [
-      "dist",
-      "main.js",
-      "preload.js",
-      "package.json",
-      "assets/icons/**/*",
-      "Token/lib/**/*",
-      "!node_modules/.cache"
-    ],
-    "directories": {
-      "buildResources": "assets"
+
+
+
+"build": {
+  "appId": "com.alireza.imagecomparison",
+  "productName": "ImageComparisonTool",
+  "executableName": "image-comparison-tool",
+  
+
+  "files": [
+    "dist",
+    "main.js",
+    "preload.js",
+    "package.json",
+    "assets/icons/**/*",
+    "!node_modules/.cache"
+  ],
+  "directories": {
+    "buildResources": "assets"
+  },
+  
+  "extraResources": [
+    {
+      "from": "Token/lib",
+      "to": "lib"
     },
-    "linux": {
-      "executableArgs": [
-        "--no-sandbox"
-      ],
-      "extraResources": [
-        {
-          "from": "./drivers/ePass3003-Linux-latest.tar.gz",
-          "to": "driver-installer.tar.gz"
-        }
-      ],
-      "target": [
-        {
-          "target": "deb",
-          "arch": [
-            "x64"
-          ]
-        }
-      ],
-      "icon": "assets/icons/icon.png",
-      "category": "Graphics",
-      "desktop": {
-        "Name": "Image Comparison Tool",
-        "GenericName": "Image Comparison",
-        "Comment": "Compare and search similar images",
-        "Categories": "Graphics;Photography;",
-        "Keywords": "image;comparison;similarity;photo;search;"
+    {
+      "from": "./drivers/ePass3003-English-withX64-latest.exe",
+      "to": "driver-installer.exe"
+    },
+    {
+      "from": "./drivers/ePass3003-Linux-latest.tar.gz",
+      "to": "driver-installer.tar.gz"
+    }
+  ],
+  
+  "win": {
+    "target": [
+      {
+        "target": "nsis",
+        "arch": [ "x64" ]
+      },
+      {
+        "target": "portable", 
+        "arch": [ "x64" ]
       }
-    },
-    "win": {
-      "extraResources": [
-        {
-          "from": "./drivers/ePass3003-English-withX64-latest.exe",
-          "to": "driver-installer.exe"
-        }
-      ],
-      "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        }
-      ],
-      "icon": "assets/icons/icon.png",
-      "requestedExecutionLevel": "asInvoker"
-    },
-    "nsis": {
-      "oneClick": false,
-      "perMachine": false,
-      "allowToChangeInstallationDirectory": true,
-      "deleteAppDataOnUninstall": false,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "shortcutName": "Image Comparison Tool",
-      "installerIcon": "assets/icons/icon.ico",
-      "uninstallerIcon": "assets/icons/icon.ico"
+    ],
+    "icon": "assets/icons/icon.png",
+    "requestedExecutionLevel": "asInvoker"
+  },
+  "linux": {
+    "executableArgs": [ "--no-sandbox" ],
+    "target": [
+      {
+        "target": "deb",
+        "arch": [ "x64" ]
+      }
+    ],
+    "icon": "assets/icons/icon.png",
+    "category": "Graphics",
+    "desktop": {
+      "Name": "Image Comparison Tool",
+      "GenericName": "Image Comparison",
+      "Comment": "Compare and search similar images",
+      "Categories": "Graphics;Photography;",
+      "Keywords": "image;comparison;similarity;photo;search;"
     }
   },
+  "nsis": {
+    "oneClick": false,
+    "perMachine": false,
+    "allowToChangeInstallationDirectory": true,
+    "deleteAppDataOnUninstall": false,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "Image Comparison Tool",
+    "installerIcon": "assets/icons/icon.ico",
+    "uninstallerIcon": "assets/icons/icon.ico"
+  }
+},
+
   "scripts": {
     "dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron . --no-sandbox\"",
     "build": "vite build",
