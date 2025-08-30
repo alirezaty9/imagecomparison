@@ -7,11 +7,11 @@ export default function Layout() {
     <>
       <Navbar />
       
-      {/* Spacer for fixed navbar - اینجا اضافه کردم */}
-      <div className="h-16"></div>
+      {/* Compact spacer for fixed navbar */}
+      <div className="h-20"></div>
       
-      <main className="relative">
-        <div className="relative z-10">
+      <main className="relative min-h-screen">
+        <div className="relative z-10 py-4">
           <Outlet />
         </div>
       </main>

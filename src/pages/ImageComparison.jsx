@@ -446,18 +446,18 @@ export default function ImageComparison() {
     if (score >= 80) return { text: 'شباهت بالا', color: 'text-green-600', bg: 'bg-green-50' };
     if (score >= 60) return { text: 'شباهت متوسط', color: 'text-yellow-600', bg: 'bg-yellow-50' };
     if (score >= 40) return { text: 'شباهت کم', color: 'text-orange-600', bg: 'bg-orange-50' };
-    return { text: 'شباهت بسیار کم', color: 'text-red-600', bg: 'bg-red-50' };
+    return { text: 'شباهت بسیار کم', color: 'text-orange-600', bg: 'bg-orange-50' };
   }, []);
 
-  // Enhanced Image Upload Component
+  // Industrial Image Upload Component
   const ImageUploadBox = ({ imageSlot, image, title }) => (
-    <div className="bg-white rounded-lg shadow-md p-6 transition-all duration-200 hover:shadow-lg">
+    <div className="bg-gray-800 rounded-lg shadow-lg p-6 border border-gray-700 transition-all duration-200">
       <div className="flex justify-between items-center mb-4">
-        <h3 className="text-lg font-semibold">{title}</h3>
+        <h3 className="text-lg font-semibold text-white">{title}</h3>
         {image && (
           <button
             onClick={() => removeImage(imageSlot)}
-            className="px-3 py-1 bg-red-500 text-white rounded text-sm hover:bg-red-600 transition-colors"
+            className="px-3 py-1 bg-orange-600 text-white rounded text-sm hover:bg-orange-700 transition-colors"
           >
             حذف
           </button>
@@ -465,11 +465,11 @@ export default function ImageComparison() {
       </div>
 
       {!image ? (
-        <div 
+        <div
           className={`border-2 border-dashed rounded-lg p-6 text-center transition-all duration-200 ${
-            dragOver[imageSlot] 
-              ? 'border-blue-500 bg-blue-50 scale-105' 
-              : 'border-gray-300 hover:border-blue-400 hover:bg-blue-25'
+            dragOver[imageSlot]
+              ? 'border-blue-400 bg-gray-800'
+              : 'border-gray-600 hover:border-blue-500'
           }`}
           onDragOver={(e) => handleDragOver(e, imageSlot)}
           onDragLeave={(e) => handleDragLeave(e, imageSlot)}
@@ -482,41 +482,41 @@ export default function ImageComparison() {
             className="hidden"
             id={`${imageSlot}Input`}
           />
-          
+
           <div className="space-y-3">
             <div className="text-4xl text-gray-400">📷</div>
             <button
               onClick={() => openFileDialog(imageSlot)}
-              className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors transform hover:scale-105"
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
             >
               انتخاب تصویر
             </button>
-            <p className="text-gray-500 text-sm">یا اینجا بکشید</p>
+            <p className="text-gray-400 text-sm">یا اینجا بکشید</p>
           </div>
 
           {/* Upload Progress */}
           {uploadProgress[imageSlot] > 0 && uploadProgress[imageSlot] < 100 && (
             <div className="mt-3">
-              <div className="w-full bg-gray-200 rounded-full h-2">
-                <div 
+              <div className="w-full bg-gray-600 rounded-full h-2">
+                <div
                   className="bg-blue-500 h-2 rounded-full transition-all duration-300"
                   style={{ width: `${uploadProgress[imageSlot]}%` }}
                 ></div>
               </div>
-              <p className="text-xs text-gray-600 mt-1">در حال آپلود... {uploadProgress[imageSlot]}%</p>
+              <p className="text-xs text-gray-400 mt-1">در حال آپلود... {uploadProgress[imageSlot]}%</p>
             </div>
           )}
         </div>
       ) : (
-        <div className="border rounded-lg p-4 bg-gray-50">
-          <img 
-            src={image.url} 
+        <div className="border rounded-lg p-4 bg-gray-700 border-gray-600">
+          <img
+            src={image.url}
             alt={image.name}
-            className="w-full h-48 object-cover rounded-lg mb-3 transition-transform hover:scale-105"
+            className="w-full h-48 object-cover rounded-lg mb-3"
           />
           <div>
-            <h4 className="font-medium truncate" title={image.name}>{image.name}</h4>
-            <p className="text-sm text-gray-600">{formatFileSize(image.size)}</p>
+            <h4 className="font-medium text-white truncate" title={image.name}>{image.name}</h4>
+            <p className="text-sm text-gray-400">{formatFileSize(image.size)}</p>
             {image.uploadedAt && (
               <p className="text-xs text-gray-500">
                 آپلود شده: {new Date(image.uploadedAt).toLocaleTimeString('fa-IR')}
@@ -531,59 +531,59 @@ export default function ImageComparison() {
   return (
     <div className="container mx-auto p-6 max-w-6xl">
       <div className="text-center mb-8">
-        <h1 className="text-3xl font-bold text-gray-800 mb-2">مقایسه دو تصویر</h1>
-        <p className="text-gray-600">دو تصویر را آپلود کنید و میزان شباهت آن‌ها را محاسبه کنید</p>
+        <h1 className="text-3xl font-bold text-white mb-2">مقایسه دو تصویر</h1>
+        <p className="text-gray-400">دو تصویر را آپلود کنید و میزان شباهت آن‌ها را محاسبه کنید</p>
       </div>
 
-      {/* Enhanced Connection Status */}
+      {/* Connection Status */}
       <div className="mb-6">
         {connectionStatus === 'connected' && apiInfo && (
-          <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+          <div className="bg-green-900 border border-green-700 rounded-lg p-3">
             <div className="flex items-center gap-2 mb-2">
-              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-              <span className="text-green-800 text-sm font-medium">متصل به سرور</span>
-              <span className="text-green-600 text-xs">({apiUrl})</span>
+              <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+              <span className="text-green-300 text-sm font-medium">متصل به سرور</span>
+              <span className="text-green-400 text-xs">({apiUrl})</span>
             </div>
-            <div className="text-sm text-green-700 grid grid-cols-1 md:grid-cols-3 gap-2">
+            <div className="text-sm text-green-400 grid grid-cols-1 md:grid-cols-3 gap-2">
               <div>وضعیت: {apiInfo.status}</div>
-              <div>مدل: {apiInfo.model_loaded ? '✓ بارگذاری شده' : '✗ بارگذاری نشده'}</div>
+              <div>مدل: {apiInfo.model_loaded ? 'بارگذاری شده' : 'بارگذاری نشده'}</div>
               <div>تعداد تصاویر: {apiInfo.index_size || 0}</div>
             </div>
           </div>
         )}
         {connectionStatus === 'disconnected' && (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-center gap-2">
-            <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-            <span className="text-red-800 text-sm flex-1">{error || 'عدم اتصال به سرور'}</span>
-            <button 
+          <div className="bg-orange-900 border border-orange-700 rounded-lg p-3 flex items-center gap-2">
+            <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
+            <span className="text-orange-300 text-sm flex-1">{error || 'عدم اتصال به سرور'}</span>
+            <button
               onClick={checkConnection}
-              className="px-3 py-1 bg-red-500 text-white rounded text-sm hover:bg-red-600 transition-colors"
+              className="px-3 py-1 bg-orange-600 text-white rounded text-sm hover:bg-orange-700 transition-colors"
             >
               تلاش مجدد
             </button>
           </div>
         )}
         {connectionStatus === 'checking' && (
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center gap-2">
-            <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
-            <span className="text-blue-800 text-sm">در حال بررسی اتصال...</span>
+          <div className="bg-blue-900 border border-blue-700 rounded-lg p-3 flex items-center gap-2">
+            <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+            <span className="text-blue-300 text-sm">در حال بررسی اتصال...</span>
           </div>
         )}
       </div>
 
-      {/* Enhanced Server Settings */}
-      <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-        <h2 className="text-lg font-semibold mb-4">تنظیمات سرور</h2>
+      {/* Server Settings */}
+      <div className="bg-gray-800 rounded-lg shadow-lg p-6 mb-6 border border-gray-700">
+        <h2 className="text-lg font-semibold text-white mb-4">تنظیمات سرور</h2>
         <div className="flex gap-4 items-end">
           <div className="flex-1">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-300 mb-2">
               آدرس سرور
             </label>
             <input
               type="text"
               value={apiUrl}
               onChange={(e) => setApiUrl(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-black"
+              className="w-full px-3 py-2 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-700 text-white"
               placeholder="http://192.168.88.69:8000"
             />
           </div>
@@ -591,7 +591,7 @@ export default function ImageComparison() {
             <button
               onClick={checkConnection}
               disabled={connectionStatus === 'checking'}
-              className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 transition-colors"
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
             >
               {connectionStatus === 'checking' ? 'در حال بررسی...' : 'تست اتصال'}
             </button>
@@ -599,7 +599,7 @@ export default function ImageComparison() {
           <div>
             <button
               onClick={saveSettings}
-              className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors"
+              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
             >
               ذخیره
             </button>
@@ -621,12 +621,12 @@ export default function ImageComparison() {
         />
       </div>
 
-      {/* Enhanced Action Buttons */}
+      {/* Action Buttons */}
       <div className="text-center mb-6 space-x-4 space-x-reverse">
         <button
           onClick={compareImages}
           disabled={!image1 || !image2 || isLoading || connectionStatus !== 'connected'}
-          className="px-8 py-3 bg-green-500 text-white rounded-lg text-lg font-semibold hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-105"
+          className="px-8 py-3 bg-green-600 text-white rounded-lg text-lg font-semibold hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           {isLoading ? (
             <span className="flex items-center gap-2 justify-center">
@@ -639,19 +639,19 @@ export default function ImageComparison() {
         </button>
 
         {(image1 || image2) && (
-          <button
-            onClick={clearAll}
-            className="px-6 py-3 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-all duration-200 transform hover:scale-105"
-          >
-            🗑️ پاک کردن همه
-          </button>
+                      <button
+              onClick={clearAll}
+              className="px-6 py-3 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors"
+            >
+              🗑️ پاک کردن همه
+            </button>
         )}
       </div>
 
-      {/* Enhanced Messages */}
+      {/* Messages */}
       {error && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6 animate-fadeIn">
-          <div className="flex items-center gap-2 text-red-800">
+        <div className="bg-orange-900 border border-orange-700 rounded-lg p-4 mb-6">
+          <div className="flex items-center gap-2 text-orange-300">
             <span>⚠️</span>
             <span>{error}</span>
           </div>
@@ -659,62 +659,66 @@ export default function ImageComparison() {
       )}
 
       {success && (
-        <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6 animate-fadeIn">
-          <div className="flex items-center gap-2 text-green-800">
+        <div className="bg-green-900 border border-green-700 rounded-lg p-4 mb-6">
+          <div className="flex items-center gap-2 text-green-300">
             <span>✅</span>
             <span>{success}</span>
           </div>
         </div>
       )}
 
-      {/* Enhanced Comparison Result */}
+      {/* Comparison Result */}
       {comparisonResult && (
-        <div className="bg-white rounded-lg shadow-md p-6 animate-fadeIn">
-          <h2 className="text-xl font-semibold mb-6 text-center">نتیجه مقایسه</h2>
+        <div className="bg-gray-800 rounded-lg shadow-lg p-6 border border-gray-700">
+          <h2 className="text-xl font-semibold text-white mb-6 text-center">نتیجه مقایسه</h2>
           
           {/* Visual Comparison */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
             {/* Image 1 */}
             <div className="text-center">
-              <div className="border rounded-lg p-4 bg-gray-50">
-                <img 
-                  src={image1.url} 
+              <div className="border rounded-lg p-4 bg-gray-700 border-gray-600">
+                <img
+                  src={image1.url}
                   alt="تصویر اول"
                   className="w-full h-40 object-cover rounded-lg mb-2"
                 />
-                <p className="text-sm font-medium text-gray-700">{comparisonResult.image1Name || image1.name}</p>
+                <p className="text-sm font-medium text-white">{comparisonResult.image1Name || image1.name}</p>
               </div>
             </div>
 
-            {/* Enhanced Similarity Score */}
+            {/* Similarity Score */}
             <div className="flex items-center justify-center">
-              <div className="text-center p-6 rounded-lg border-2 border-dashed border-gray-300 bg-gradient-to-br from-blue-50 to-indigo-50">
-                <div className="text-6xl font-bold text-blue-600 mb-3 animate-pulse">
+              <div className="text-center p-6 rounded-lg border-2 border-dashed border-gray-600 bg-gray-700">
+                <div className="text-6xl font-bold text-blue-400 mb-3">
                   {comparisonResult.similarity_score.toFixed(1)}%
                 </div>
                 <div className={`inline-block px-4 py-2 rounded-lg text-sm font-medium mb-4 ${
-                  getSimilarityDescription(comparisonResult.similarity_score).bg
-                } ${getSimilarityDescription(comparisonResult.similarity_score).color}`}>
+                  comparisonResult.similarity_score >= 80
+                    ? 'text-green-400 bg-green-900'
+                    : comparisonResult.similarity_score >= 60
+                    ? 'text-yellow-400 bg-yellow-900'
+                    : 'text-red-400 bg-red-900'
+                }`}>
                   {getSimilarityDescription(comparisonResult.similarity_score).text}
                 </div>
-                
-                {/* Enhanced Progress Bar */}
-                <div className="w-full bg-gray-200 rounded-full h-4 mt-4 overflow-hidden shadow-inner">
-                  <div 
+
+                {/* Progress Bar */}
+                <div className="w-full bg-gray-600 rounded-full h-4 mt-4 overflow-hidden">
+                  <div
                     className={`h-4 rounded-full transition-all duration-2000 ease-out ${
-                      comparisonResult.similarity_score >= 90 ? 'bg-gradient-to-r from-emerald-500 to-green-500' : 
-                      comparisonResult.similarity_score >= 80 ? 'bg-gradient-to-r from-green-500 to-lime-500' : 
-                      comparisonResult.similarity_score >= 60 ? 'bg-gradient-to-r from-yellow-500 to-orange-500' : 
-                      comparisonResult.similarity_score >= 40 ? 'bg-gradient-to-r from-orange-500 to-red-500' : 
-                      'bg-gradient-to-r from-red-500 to-red-700'
+                      comparisonResult.similarity_score >= 80
+                        ? 'bg-green-500'
+                        : comparisonResult.similarity_score >= 60
+                        ? 'bg-yellow-500'
+                        : 'bg-orange-500'
                     }`}
                     style={{ width: `${comparisonResult.similarity_score}%` }}
                   ></div>
                 </div>
-                
+
                 {/* Comparison timestamp */}
                 {comparisonResult.comparedAt && (
-                  <p className="text-xs text-gray-500 mt-2">
+                  <p className="text-xs text-gray-400 mt-2">
                     مقایسه شده در: {new Date(comparisonResult.comparedAt).toLocaleString('fa-IR')}
                   </p>
                 )}
@@ -723,40 +727,46 @@ export default function ImageComparison() {
 
             {/* Image 2 */}
             <div className="text-center">
-              <div className="border rounded-lg p-4 bg-gray-50">
-                <img 
-                  src={image2.url} 
+              <div className="border rounded-lg p-4 bg-gray-700 border-gray-600">
+                <img
+                  src={image2.url}
                   alt="تصویر دوم"
                   className="w-full h-40 object-cover rounded-lg mb-2"
                 />
-                <p className="text-sm font-medium text-gray-700">{comparisonResult.image2Name || image2.name}</p>
+                <p className="text-sm font-medium text-white">{comparisonResult.image2Name || image2.name}</p>
               </div>
             </div>
           </div>
 
-          {/* Enhanced Detailed Results */}
-          <div className="bg-gray-50 rounded-lg p-6">
-            <h3 className="text-lg font-semibold mb-4">جزئیات مقایسه</h3>
+          {/* Detailed Results */}
+          <div className="bg-gray-700 rounded-lg p-6 border border-gray-600">
+            <h3 className="text-lg font-semibold text-white mb-4">جزئیات مقایسه</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
-              <div className="bg-white rounded-lg p-4 border-l-4 border-blue-500">
-                <div className="text-gray-600 mb-1">تصویر اول</div>
-                <div className="font-medium">{comparisonResult.image1Name || comparisonResult.image1}</div>
-                <div className="text-xs text-gray-500">{formatFileSize(image1.size)}</div>
+              <div className="bg-gray-600 rounded-lg p-4 border-l-4 border-blue-500">
+                <div className="text-gray-300 mb-1">تصویر اول</div>
+                <div className="font-medium text-white">{comparisonResult.image1Name || comparisonResult.image1}</div>
+                <div className="text-xs text-gray-400">{formatFileSize(image1.size)}</div>
               </div>
-              <div className="bg-white rounded-lg p-4 border-l-4 border-green-500">
-                <div className="text-gray-600 mb-1">تصویر دوم</div>
-                <div className="font-medium">{comparisonResult.image2Name || comparisonResult.image2}</div>
-                <div className="text-xs text-gray-500">{formatFileSize(image2.size)}</div>
+              <div className="bg-gray-600 rounded-lg p-4 border-l-4 border-green-500">
+                <div className="text-gray-300 mb-1">تصویر دوم</div>
+                <div className="font-medium text-white">{comparisonResult.image2Name || comparisonResult.image2}</div>
+                <div className="text-xs text-gray-400">{formatFileSize(image2.size)}</div>
               </div>
-              <div className="bg-white rounded-lg p-4 border-l-4 border-purple-500">
-                <div className="text-gray-600 mb-1">امتیاز شباهت</div>
-                <div className="font-bold text-lg text-purple-600">
+              <div className="bg-gray-600 rounded-lg p-4 border-l-4 border-purple-500">
+                <div className="text-gray-300 mb-1">امتیاز شباهت</div>
+                <div className="font-bold text-lg text-purple-400">
                   {comparisonResult.similarity_score.toFixed(2)}%
                 </div>
               </div>
-              <div className="bg-white rounded-lg p-4 border-l-4 border-indigo-500">
-                <div className="text-gray-600 mb-1">وضعیت</div>
-                <div className={`font-medium ${getSimilarityDescription(comparisonResult.similarity_score).color}`}>
+              <div className="bg-gray-600 rounded-lg p-4 border-l-4 border-indigo-500">
+                <div className="text-gray-300 mb-1">وضعیت</div>
+                <div className={`font-medium ${
+                  comparisonResult.similarity_score >= 80
+                    ? 'text-green-400'
+                    : comparisonResult.similarity_score >= 60
+                    ? 'text-yellow-400'
+                    : 'text-red-400'
+                }`}>
                   {getSimilarityDescription(comparisonResult.similarity_score).text}
                 </div>
               </div>
@@ -764,26 +774,26 @@ export default function ImageComparison() {
 
             {/* Server message */}
             {comparisonResult.message && (
-              <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
-                <div className="text-sm text-blue-700">
+              <div className="mt-4 p-3 bg-blue-900 rounded-lg border border-blue-700">
+                <div className="text-sm text-blue-300">
                   <strong>پیام سرور:</strong> {comparisonResult.message}
                 </div>
               </div>
             )}
 
-            {/* Enhanced Interpretation Guide */}
-            <div className="mt-6 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200">
-              <h4 className="font-medium text-blue-800 mb-3 flex items-center gap-2">
+            {/* Interpretation Guide */}
+            <div className="mt-6 p-4 bg-gray-600 rounded-lg border border-gray-500">
+              <h4 className="font-medium text-white mb-3 flex items-center gap-2">
                 <span>📊</span>
                 راهنمای تفسیر نتایج:
               </h4>
-              <div className="text-sm text-blue-700 space-y-2">
+              <div className="text-sm text-gray-300 space-y-2">
                 <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 bg-emerald-500 rounded-full"></div>
+                  <div className="w-3 h-3 bg-green-500 rounded-full"></div>
                   <span>بالای 95%: تطابق کامل - تصاویر یکسان یا تقریباً یکسان</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                  <div className="w-3 h-3 bg-green-400 rounded-full"></div>
                   <span>80-94%: شباهت بسیار بالا - تصاویر بسیار مشابه</span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -795,7 +805,7 @@ export default function ImageComparison() {
                   <span>40-59%: شباهت متوسط - برخی شباهت‌ها موجود</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+                  <div className="w-3 h-3 bg-orange-500 rounded-full"></div>
                   <span>زیر 40%: شباهت کم یا عدم شباهت</span>
                 </div>
               </div>
@@ -805,10 +815,10 @@ export default function ImageComparison() {
       )}
 
       {/* Footer */}
-      <div className="text-center mt-8 text-gray-500 text-sm">
+      <div className="text-center mt-8 text-gray-400 text-sm">
         <p>نسخه 2.1.0 • مقایسه تصاویر با API درست شده</p>
         <p className="text-xs mt-1">
-          {window.electronAPI ? '🖥️ Electron Mode' : '🌐 Web Mode'} • 
+          {window.electronAPI ? 'Electron Mode' : 'Web Mode'} •
           {window.electronFetch ? ' CORS-Free ✅' : ' Standard Fetch ⚠️'}
         </p>
       </div>

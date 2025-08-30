@@ -894,27 +894,52 @@ export default function ImageSimilaritySearch() {
   };
 
   return (
-    <div className="container mx-auto p-6 max-w-6xl">
-      {/* Header */}
-      <div className="text-center mb-8">
-        <h1 className="text-3xl font-bold text-gray-800 mb-2">
-          جستجوی تصاویر مشابه با هوش مصنوعی
-        </h1>
-        <p className="text-gray-600">
-          تصویر خود را آپلود کنید، توضیح AI دریافت کنید و تصاویر مشابه را پیدا
-          کنید
-        </p>
-      </div>
+    <div className="bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
+      <div className="container mx-auto px-4 py-2 max-w-6xl">
+        {/* Compact Hero Header */}
+        <div className="text-center mb-8 animate-fade-in">
+          <div className="flex items-center justify-center gap-4 mb-4">
+            <div className="relative group">
+              <div className="absolute -inset-2 bg-gradient-to-r from-blue-500/20 via-cyan-500/20 to-purple-500/20 rounded-2xl blur-lg opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+              <div className="relative w-16 h-16 bg-gradient-to-br from-blue-600 via-cyan-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-xl border border-white/10 group-hover:scale-105 transition-all duration-300">
+                <span className="text-3xl animate-float">🔍</span>
+              </div>
+            </div>
+            <div className="text-right">
+              <h1 className="text-3xl md:text-4xl font-black bg-gradient-to-r from-white via-blue-100 to-cyan-200 bg-clip-text text-transparent">
+                جستجوگر هوشمند تصاویر
+              </h1>
+              <p className="text-sm text-slate-400 mt-1">
+                قدرت گرفته از هوش مصنوعی و امضای دیجیتال
+              </p>
+            </div>
+          </div>
 
-      {/* Enhanced Token Verification Result Display */}
+          {/* Compact Feature Tags */}
+          <div className="flex flex-wrap justify-center gap-2 mt-4">
+            <div className="flex items-center gap-2 bg-blue-500/10 border border-blue-500/20 rounded-full px-3 py-1">
+              <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+              <span className="text-xs font-medium text-blue-400">AI</span>
+            </div>
+            <div className="flex items-center gap-2 bg-green-500/10 border border-green-500/20 rounded-full px-3 py-1">
+              <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+              <span className="text-xs font-medium text-green-400">امنیت</span>
+            </div>
+            <div className="flex items-center gap-2 bg-purple-500/10 border border-purple-500/20 rounded-full px-3 py-1">
+              <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
+              <span className="text-xs font-medium text-purple-400">سرعت</span>
+            </div>
+          </div>
+        </div>
+
+            {/* Token Verification Result Display */}
       {signResult && (
         <div
-          className={`fixed top-5 left-1/2 transform -translate-x-1/2 z-50 max-w-md w-full mx-4 p-4 rounded-lg shadow-lg border-2 ${
+          className={`fixed top-5 left-1/2 transform -translate-x-1/2 z-50 max-w-md w-full mx-4 p-4 rounded-lg shadow-lg border ${
             signResult.success
-              ? "bg-green-50 border-green-200 text-green-800"
-              : "bg-red-50 border-red-200 text-red-800"
+              ? "bg-green-900 border-green-700 text-green-300"
+              : "bg-orange-900 border-orange-700 text-orange-300"
           }`}
-          style={{ animation: "slideDown 0.3s ease-out" }}
         >
           <div className="flex items-start gap-3">
             <span className="text-2xl">{signResult.success ? "✅" : "❌"}</span>
@@ -926,37 +951,9 @@ export default function ImageSimilaritySearch() {
               </h3>
               <p className="text-sm mb-3">{signResult.message}</p>
 
-              {signResult.details && signResult.success && (
-                <details className="text-xs">
-                  <summary className="cursor-pointer font-medium mb-1">
-                    جزئیات فنی
-                  </summary>
-                  <div className="bg-white bg-opacity-50 p-2 rounded border space-y-1">
-                    <div>
-                      <strong>اندازه چالش:</strong>{" "}
-                      {signResult.details.challengeSize} بایت
-                    </div>
-                    <div>
-                      <strong>اندازه امضا:</strong>{" "}
-                      {signResult.details.signatureSize} بایت
-                    </div>
-                    <div>
-                      <strong>تطابق کلید عمومی:</strong>{" "}
-                      {signResult.details.publicKeyMatch
-                        ? "✓ تایید شده"
-                        : "✗ ناموفق"}
-                    </div>
-                    <div>
-                      <strong>زمان:</strong>{" "}
-                      {new Date(signResult.timestamp).toLocaleString("fa-IR")}
-                    </div>
-                  </div>
-                </details>
-              )}
-
               <button
                 onClick={() => setSignResult(null)}
-                className="mt-2 px-2 py-1 bg-gray-500 text-white rounded text-xs hover:bg-gray-600"
+                className="mt-2 px-2 py-1 bg-gray-700 text-white rounded text-xs hover:bg-gray-800"
               >
                 بستن
               </button>
@@ -965,107 +962,88 @@ export default function ImageSimilaritySearch() {
         </div>
       )}
 
-      {/* Enhanced PKCS#11 Token Control Panel */}
-      <div className="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-lg shadow-md p-6 mb-6 border border-purple-200">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="text-lg font-semibold text-purple-800 flex items-center gap-2">
-              <span>🔐</span>
-              کنترل امنیتی PKCS#11
-            </h2>
-            <p className="text-sm text-purple-600">
-              تایید هویت با توکن سخت‌افزاری
-            </p>
+        {/* Compact PKCS#11 Token Panel */}
+        <div className="card mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-gradient-to-br from-emerald-600 to-green-600 rounded-xl flex items-center justify-center">
+                <span className="text-lg">🔐</span>
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-white">کنترل امنیتی PKCS#11</h2>
+                <p className="text-xs text-slate-400">تایید هویت با توکن</p>
+              </div>
+            </div>
+            <TokenStatusIndicator />
           </div>
-          <TokenStatusIndicator />
+
+          <div className="flex flex-wrap gap-3">
+            <button
+              onClick={performTokenVerification}
+              disabled={isProcessingSigning}
+              className="btn-success text-sm disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+            >
+              {isProcessingSigning ? (
+                <>
+                  <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  تست امضا...
+                </>
+              ) : (
+                <>
+                  🔏 تست امضا
+                </>
+              )}
+            </button>
+
+            <button
+              onClick={checkTokenStatus}
+              className="btn-secondary text-sm"
+            >
+              🔍 بررسی وضعیت
+            </button>
+          </div>
         </div>
 
-        <div className="flex flex-wrap gap-3">
-          <button
-            onClick={performTokenVerification}
-            disabled={isProcessingSigning}
-            className="px-4 py-2 bg-purple-500 text-white rounded-lg font-medium hover:bg-purple-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
-          >
-            {isProcessingSigning ? (
-              <>
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                در حال تست...
-              </>
-            ) : (
-              <>
-                <span>🔏</span>
-                تست امضای PKCS#11
-              </>
-            )}
-          </button>
-
-          <button
-            onClick={checkTokenStatus}
-            className="px-4 py-2 bg-indigo-500 text-white rounded-lg font-medium hover:bg-indigo-600 transition-colors flex items-center gap-2"
-          >
-            <span>🔍</span>
-            بررسی وضعیت توکن
-          </button>
-
-          {tokenInfo && (
-            <div className="flex items-center px-3 py-2 bg-white rounded-lg border text-sm">
-              <span className="text-gray-600">
-                درایور:{" "}
-                {tokenInfo.driverPath
-                  ? tokenInfo.driverPath.split("/").pop()
-                  : "نامشخص"}
-              </span>
+        {/* Compact Connection Status */}
+        <div className="mb-6">
+          {connectionStatus === "connected" && apiInfo && (
+            <div className="status-indicator status-success flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
+                <span className="font-semibold">متصل به سرور</span>
+                <span className="text-xs text-green-400">
+                  {apiInfo.model_loaded ? "✓ مدل آماده" : "✗ مدل ناآماده"} • 
+                  {(apiInfo.index_size || 0).toLocaleString('fa-IR')} تصویر
+                </span>
+              </div>
+            </div>
+          )}
+          {connectionStatus === "disconnected" && (
+            <div className="status-indicator status-error flex items-center gap-4">
+              <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
+              <span className="font-semibold flex-1">عدم اتصال به سرور</span>
+              <button
+                onClick={checkConnection}
+                className="btn-warning text-xs py-1 px-3"
+              >
+                تلاش مجدد
+              </button>
+            </div>
+          )}
+          {connectionStatus === "checking" && (
+            <div className="status-indicator status-info flex items-center gap-3">
+              <div className="w-3 h-3 bg-blue-500 rounded-full animate-pulse"></div>
+              <span className="font-semibold">در حال بررسی اتصال...</span>
             </div>
           )}
         </div>
-      </div>
 
-      {/* Connection Status */}
-      <div className="mb-6">
-        {connectionStatus === "connected" && apiInfo && (
-          <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-              <span className="text-green-800 text-sm font-medium">
-                متصل به سرور
-              </span>
-            </div>
-            <div className="text-sm text-green-700 grid grid-cols-1 md:grid-cols-3 gap-2">
-              <div>وضعیت: {apiInfo.status}</div>
-              <div>
-                مدل:{" "}
-                {apiInfo.model_loaded ? "✓ بارگذاری شده" : "✗ بارگذاری نشده"}
-              </div>
-              <div>تعداد تصاویر: {apiInfo.index_size || 0}</div>
-            </div>
-          </div>
-        )}
-        {connectionStatus === "disconnected" && (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-center gap-2">
-            <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-            <span className="text-red-800 text-sm">عدم اتصال به سرور</span>
-            <button
-              onClick={checkConnection}
-              className="mr-auto px-3 py-1 bg-red-500 text-white rounded text-sm hover:bg-red-600"
-            >
-              تلاش مجدد
-            </button>
-          </div>
-        )}
-        {connectionStatus === "checking" && (
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center gap-2">
-            <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
-            <span className="text-blue-800 text-sm">در حال بررسی اتصال...</span>
-          </div>
-        )}
-      </div>
-
-      {/* Settings Section - Enhanced */}
-      <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-        <h2 className="text-lg font-semibold mb-4">تنظیمات</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Compact Settings Section */}
+        <div className="card mb-6">
+          <h2 className="text-lg font-bold text-white mb-4">تنظیمات</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-300 mb-2">
               آدرس سرور جستجو
             </label>
             <div className="flex gap-2">
@@ -1073,31 +1051,31 @@ export default function ImageSimilaritySearch() {
                 type="text"
                 value={apiUrl}
                 onChange={(e) => setApiUrl(e.target.value)}
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-gray-50 text-black"
+                className="flex-1 px-3 py-2 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-gray-700 text-white"
                 placeholder="http://192.168.88.69:8000"
               />
               <button
                 onClick={checkConnection}
-                className="px-3 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 text-sm"
+                className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
               >
                 تست
               </button>
             </div>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-300 mb-2">
               آدرس سرور AI
             </label>
             <input
               type="text"
               value={aiApiUrl}
               onChange={(e) => setAiApiUrl(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-gray-50 text-black"
+              className="w-full px-3 py-2 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-gray-700 text-white"
               placeholder="http://192.168.88.69:11434"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-300 mb-2">
               دقت جستجو ({threshold}%)
             </label>
             <input
@@ -1113,13 +1091,13 @@ export default function ImageSimilaritySearch() {
             </div>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-300 mb-2">
               تعداد نتایج
             </label>
             <select
               value={maxResults}
               onChange={(e) => setMaxResults(parseInt(e.target.value))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-gray-50 text-black"
+              className="w-full px-3 py-2 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-gray-700 text-white"
             >
               <option value={5}>5 تصویر</option>
               <option value={10}>10 تصویر</option>
@@ -1131,21 +1109,21 @@ export default function ImageSimilaritySearch() {
         <div className="mt-4 flex gap-2">
           <button
             onClick={saveSettings}
-            className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 text-sm"
+            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
           >
             ذخیره تنظیمات
           </button>
         </div>
       </div>
 
-      {/* Upload Section - Enhanced with AI Integration */}
-      <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+      {/* Upload Section */}
+      <div className="bg-gray-800 rounded-lg shadow-lg p-6 mb-6 border border-gray-700">
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-semibold">انتخاب تصویر</h2>
+          <h2 className="text-lg font-semibold text-white">انتخاب تصویر</h2>
           {selectedImage && (
             <button
               onClick={removeImage}
-              className="px-3 py-1 bg-red-500 text-white rounded text-sm hover:bg-red-600"
+              className="px-3 py-1 bg-orange-600 text-white rounded text-sm hover:bg-orange-700"
             >
               حذف تصویر
             </button>
@@ -1154,10 +1132,10 @@ export default function ImageSimilaritySearch() {
 
         {!selectedImage ? (
           <div
-            className={`border-2 border-dashed rounded-lg p-8 text-center transition-all duration-200 ${
+            className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors duration-200 ${
               dragOver
-                ? "border-blue-500 bg-blue-50 scale-105"
-                : "border-gray-300 hover:border-blue-400"
+                ? "border-blue-400 bg-gray-800"
+                : "border-gray-600 hover:border-blue-500"
             }`}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
@@ -1170,22 +1148,23 @@ export default function ImageSimilaritySearch() {
               className="hidden"
               id="imageInput"
             />
+
             <div className="space-y-4">
               <div className="text-6xl text-gray-400">📷</div>
               <button
                 onClick={openFileDialog}
-                className="px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-all duration-200 font-medium transform hover:scale-105"
+                className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
               >
                 انتخاب تصویر
               </button>
+              <p className="text-gray-400 text-sm">یا تصویر را به اینجا بکشید</p>
+              <p className="text-xs text-gray-500 mt-2">
+                فرمت‌های مجاز: JPG, PNG, GIF, BMP, WEBP (حداکثر 50 مگابایت)
+              </p>
             </div>
-            <p className="text-gray-500 mt-4">یا تصویر را به اینجا بکشید</p>
-            <p className="text-xs text-gray-400 mt-2">
-              فرمت‌های مجاز: JPG, PNG, GIF, BMP, WEBP (حداکثر 50 مگابایت)
-            </p>
           </div>
         ) : (
-          <div className="border rounded-lg p-4 bg-gray-50">
+          <div className="border rounded-lg p-4 bg-slate-800 border-slate-700">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Image & AI Description Section */}
               <div>
@@ -1196,12 +1175,12 @@ export default function ImageSimilaritySearch() {
                     className="w-20 h-20 object-cover rounded-lg shadow-md hover:scale-110 transition-transform"
                   />
                   <div className="flex-1">
-                    <h3 className="font-medium">{selectedImage.name}</h3>
-                    <p className="text-sm text-gray-600">
+                    <h3 className="font-medium text-white">{selectedImage.name}</h3>
+                    <p className="text-sm text-slate-400">
                       {formatFileSize(selectedImage.size)}
                     </p>
                     {selectedImage.uploadedAt && (
-                      <p className="text-xs text-gray-500">
+                      <p className="text-xs text-slate-500">
                         {new Date(selectedImage.uploadedAt).toLocaleString(
                           "fa-IR"
                         )}
@@ -1210,12 +1189,12 @@ export default function ImageSimilaritySearch() {
                   </div>
                 </div>
 
-                {/* Enhanced AI Description */}
-                <div className="bg-white rounded-lg p-4 border shadow-sm">
+                {/* AI Description */}
+                <div className="bg-gray-700 rounded-lg p-4 border border-gray-600">
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
                       <span className="text-xl">🤖</span>
-                      <h3 className="font-semibold text-gray-800">
+                      <h3 className="font-semibold text-white">
                         توضیح هوش مصنوعی
                       </h3>
                     </div>
@@ -1233,7 +1212,7 @@ export default function ImageSimilaritySearch() {
                             if (file) getAIDescription(file);
                           }
                         }}
-                        className="px-2 py-1 bg-blue-500 text-white rounded text-xs hover:bg-blue-600"
+                        className="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700"
                         disabled={isLoadingAI}
                       >
                         🔄 تجدید
@@ -1242,40 +1221,40 @@ export default function ImageSimilaritySearch() {
                   </div>
 
                   {isLoadingAI ? (
-                    <div className="flex items-center gap-2 text-blue-600 p-3 bg-blue-50 rounded">
+                    <div className="flex items-center gap-2 text-blue-400 p-3 bg-blue-900 rounded">
                       <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
                       <span className="text-sm">
                         در حال تحلیل تصویر با هوش مصنوعی...
                       </span>
                     </div>
                   ) : aiDescription ? (
-                    <div className="bg-gray-50 rounded p-3 border-l-4 border-blue-500">
-                      <p className="text-gray-700 text-sm leading-relaxed">
+                    <div className="bg-gray-600 rounded p-3 border-l-4 border-blue-500">
+                      <p className="text-gray-300 text-sm leading-relaxed">
                         {aiDescription}
                       </p>
                     </div>
                   ) : (
-                    <div className="text-gray-500 text-sm p-3 bg-gray-100 rounded">
+                    <div className="text-gray-400 text-sm p-3 bg-gray-800 rounded">
                       هنوز توضیحی دریافت نشده است
                     </div>
                   )}
                 </div>
               </div>
 
-              {/* Enhanced Chat Section */}
+              {/* Chat Section */}
               <div>
-                <div className="bg-white rounded-lg p-4 border shadow-sm h-full">
+                <div className="bg-gray-700 rounded-lg p-4 border border-gray-600 h-full">
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
                       <span className="text-xl">💬</span>
-                      <h3 className="font-semibold text-gray-800">
+                      <h3 className="font-semibold text-white">
                         چت با AI درباره تصویر
                       </h3>
                     </div>
                     {chatMessages.length > 0 && (
                       <button
                         onClick={() => setChatMessages([])}
-                        className="px-2 py-1 bg-gray-500 text-white rounded text-xs hover:bg-gray-600"
+                        className="px-2 py-1 bg-gray-600 text-white rounded text-xs hover:bg-gray-700"
                       >
                         🗑️ پاک کردن
                       </button>
@@ -1283,9 +1262,9 @@ export default function ImageSimilaritySearch() {
                   </div>
 
                   {/* Chat Messages */}
-                  <div className="h-80 overflow-y-auto mb-3 space-y-2 bg-gray-50 rounded p-2">
+                  <div className="h-80 overflow-y-auto mb-3 space-y-2 bg-gray-800 rounded p-2 border border-gray-600">
                     {chatMessages.length === 0 ? (
-                      <div className="text-gray-500 text-sm text-center py-8">
+                      <div className="text-gray-400 text-sm text-center py-8">
                         <div className="text-4xl mb-2">🤔</div>
                         <p>سوال خود را درباره تصویر بپرسید</p>
                         <p className="text-xs mt-1">
@@ -1298,10 +1277,10 @@ export default function ImageSimilaritySearch() {
                           key={index}
                           className={`p-3 rounded-lg text-sm shadow-sm ${
                             message.role === "user"
-                              ? "bg-blue-100 text-blue-900 mr-6 border-l-4 border-blue-500"
+                              ? "bg-blue-900/30 text-blue-200 mr-6 border-l-4 border-blue-500"
                               : message.isError
-                              ? "bg-red-100 text-red-900 ml-6 border-l-4 border-red-500"
-                              : "bg-white text-gray-800 ml-6 border-l-4 border-gray-300"
+                              ? "bg-orange-900/30 text-orange-200 ml-6 border-l-4 border-orange-500"
+                              : "bg-slate-700/50 text-slate-200 ml-6 border-l-4 border-slate-500"
                           }`}
                         >
                           <div className="flex justify-between items-start gap-2">
@@ -1322,7 +1301,7 @@ export default function ImageSimilaritySearch() {
                     )}
 
                     {isLoadingChat && (
-                      <div className="bg-white text-gray-800 ml-6 p-3 rounded-lg shadow-sm border-l-4 border-blue-300">
+                      <div className="bg-gray-600 text-gray-300 ml-6 p-3 rounded-lg border-l-4 border-blue-500">
                         <div className="flex items-center gap-2">
                           <div className="w-3 h-3 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
                           <span className="text-sm">
@@ -1346,13 +1325,13 @@ export default function ImageSimilaritySearch() {
                         }
                       }}
                       placeholder="سوال خود را بپرسید..."
-                      className="flex-1 px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-black"
+                      className="flex-1 px-3 py-2 border border-gray-600 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-700 text-white"
                       disabled={isLoadingChat}
                     />
                     <button
                       onClick={sendChatMessage}
                       disabled={isLoadingChat || !currentMessage.trim()}
-                      className="px-4 py-2 bg-blue-500 text-white rounded text-sm hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="px-4 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       ارسال
                     </button>
@@ -1370,7 +1349,7 @@ export default function ImageSimilaritySearch() {
           <button
             onClick={searchSimilarImages}
             disabled={isLoading || connectionStatus !== "connected"}
-            className="px-8 py-3 bg-green-500 text-white rounded-lg text-lg font-semibold hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-105"
+            className="px-8 py-3 bg-green-600 text-white rounded-lg text-lg font-semibold hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {isLoading ? (
               <span className="flex items-center gap-2 justify-center">
@@ -1386,8 +1365,8 @@ export default function ImageSimilaritySearch() {
 
       {/* Messages */}
       {error && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6 animate-fadeIn">
-          <div className="flex items-center gap-2 text-red-800">
+        <div className="bg-orange-900 border border-orange-700 rounded-lg p-4 mb-6">
+          <div className="flex items-center gap-2 text-orange-300">
             <span>⚠️</span>
             <span>{error}</span>
           </div>
@@ -1395,19 +1374,19 @@ export default function ImageSimilaritySearch() {
       )}
 
       {success && (
-        <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6 animate-fadeIn">
-          <div className="flex items-center gap-2 text-green-800">
+        <div className="bg-green-900 border border-green-700 rounded-lg p-4 mb-6">
+          <div className="flex items-center gap-2 text-green-300">
             <span>✅</span>
             <span>{success}</span>
           </div>
         </div>
       )}
 
-      {/* Enhanced Search Results */}
+      {/* Search Results */}
       {searchResults.length > 0 && (
-        <div className="bg-white rounded-lg shadow-md p-6 animate-fadeIn">
-          <h2 className="text-lg font-semibold mb-4">
-            تصاویر مشابه ({searchResults.length} تصویر)
+        <div className="bg-gray-800 rounded-lg shadow-lg p-6 border border-gray-700">
+          <h2 className="text-xl font-semibold text-white mb-4">
+            نتایج جستجو ({searchResults.length} تصویر)
           </h2>
 
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
@@ -1417,14 +1396,14 @@ export default function ImageSimilaritySearch() {
               return (
                 <div
                   key={index}
-                  className="border rounded-lg p-3 hover:shadow-lg transition-all duration-200 hover:scale-105"
+                  className="border rounded-lg p-3 border-gray-600"
                 >
-                  <div className="aspect-square mb-3 bg-gray-100 rounded-lg overflow-hidden">
+                  <div className="aspect-square mb-3 bg-gray-700 rounded-lg overflow-hidden">
                     {imageUrl ? (
                       <img
                         src={imageUrl}
                         alt={`شباهت ${result.similarity_score}%`}
-                        className="w-full h-full object-cover transition-transform hover:scale-110"
+                        className="w-full h-full object-cover"
                         onError={(e) => {
                           e.target.src =
                             "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjNmNGY2Ii8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtc2l6ZT0iMTIiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIiBmaWxsPSIjOWNhM2FmIj7YqtmI2LfYuduRINmE2K/YsSDYqtmF2KfYsdixPC90ZXh0Pjwvc3ZnPg==";
@@ -1442,31 +1421,31 @@ export default function ImageSimilaritySearch() {
                       <span
                         className={`inline-block px-2 py-1 rounded text-sm font-bold ${
                           result.similarity_score >= 80
-                            ? "text-green-700 bg-green-100"
+                            ? "text-green-400 bg-green-900"
                             : result.similarity_score >= 60
-                            ? "text-yellow-700 bg-yellow-100"
-                            : "text-red-700 bg-red-100"
+                            ? "text-yellow-400 bg-yellow-900"
+                            : "text-orange-400 bg-orange-900"
                         }`}
                       >
                         {result.similarity_score.toFixed(1)}% شباهت
                       </span>
                     </div>
 
-                    <div className="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
+                    <div className="w-full bg-gray-600 rounded-full h-2 overflow-hidden">
                       <div
-                        className={`h-1.5 rounded-full transition-all duration-500 ${
+                        className={`h-2 rounded-full ${
                           result.similarity_score >= 80
                             ? "bg-green-500"
                             : result.similarity_score >= 60
                             ? "bg-yellow-500"
-                            : "bg-red-500"
+                            : "bg-orange-500"
                         }`}
                         style={{ width: `${result.similarity_score}%` }}
                       ></div>
                     </div>
 
-                    <div className="text-xs text-gray-500 text-center">
-                      {result.image_data ? "📄 Base64" : "🔗 Path"}
+                    <div className="text-xs text-gray-400 text-center">
+                      {result.image_data ? "Base64" : "URL"}
                     </div>
                   </div>
                 </div>
@@ -1475,29 +1454,29 @@ export default function ImageSimilaritySearch() {
           </div>
 
           {/* Results Summary */}
-          <div className="mt-6 p-4 bg-gradient-to-r from-gray-50 to-blue-50 rounded-lg">
+          <div className="mt-6 p-4 bg-gray-700 rounded-lg border border-gray-600">
             <div className="grid grid-cols-3 gap-4 text-center text-sm">
               <div>
-                <div className="text-lg font-bold text-green-600">
+                <div className="text-lg font-bold text-green-400">
                   {searchResults.filter((r) => r.similarity_score >= 80).length}
                 </div>
-                <div className="text-gray-600">شباهت بالا (80%+)</div>
+                <div className="text-gray-300">شباهت بالا (80%+)</div>
               </div>
               <div>
-                <div className="text-lg font-bold text-yellow-600">
+                <div className="text-lg font-bold text-yellow-400">
                   {
                     searchResults.filter(
                       (r) => r.similarity_score >= 60 && r.similarity_score < 80
                     ).length
                   }
                 </div>
-                <div className="text-gray-600">شباهت متوسط (60-79%)</div>
+                <div className="text-gray-300">شباهت متوسط (60-79%)</div>
               </div>
               <div>
-                <div className="text-lg font-bold text-red-600">
+                <div className="text-lg font-bold text-red-400">
                   {searchResults.filter((r) => r.similarity_score < 60).length}
                 </div>
-                <div className="text-gray-600">شباهت کم (&lt;60%)</div>
+                <div className="text-gray-300">شباهت کم (&lt;60%)</div>
               </div>
             </div>
           </div>
@@ -1505,12 +1484,12 @@ export default function ImageSimilaritySearch() {
       )}
 
       {/* Footer */}
-      <div className="text-center mt-8 text-gray-500 text-sm">
+      <div className="text-center mt-8 text-gray-400 text-sm">
         <p>
-          نسخه 3.0.0 • جستجوی تصاویر مشابه با هوش مصنوعی + امضای دیجیتال PKCS#11
+          نسخه 3.1.0 • جستجوی تصاویر مشابه با هوش مصنوعی + امضای دیجیتال PKCS#11
         </p>
         <p className="text-xs mt-1">
-          {window.electronAPI ? "🖥️ Electron Mode" : "🌐 Web Mode"} •
+          {window.electronAPI ? "Electron Mode" : "Web Mode"} •
           {window.electronFetch ? " CORS-Free ✅" : " Standard Fetch ⚠️"} •
           {tokenStatus === "verified"
             ? " PKCS#11 Verified ✅"
@@ -1572,6 +1551,7 @@ export default function ImageSimilaritySearch() {
           }
         }
       `}</style>
+      </div>
     </div>
   );
 }

@@ -410,84 +410,98 @@ const TokenGuard = ({ children }) => {
     });
   }, [status, hardwareConnected]);
 
-  // Loading Screen
+  // Industrial Loading Screen
   if (status === 'checking') {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-blue-50 via-white to-indigo-50">
-        <div className="text-center p-8 max-w-md">
-          <div className="mb-8">
-            <div className="relative">
-              <div className="w-20 h-20 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg">
-                <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-                </svg>
-              </div>
-              <div className="absolute inset-0 w-24 h-24 border-4 border-transparent border-t-blue-500 rounded-full animate-spin mx-auto"></div>
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900">
+        <div className="text-center p-8 max-w-md bg-gray-800 rounded-lg shadow-2xl border border-gray-700">
+          <div className="mb-6">
+            <div className="w-16 h-16 bg-blue-600 rounded-lg flex items-center justify-center mx-auto mb-4 shadow-lg">
+              <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+              </svg>
             </div>
-            <h1 className="text-2xl font-bold text-gray-800 mb-2">سیستم امنیتی PKCS#11</h1>
+            <h1 className="text-xl font-bold text-white mb-2">
+              سیستم امنیتی PKCS#11
+            </h1>
           </div>
 
-          <div className="space-y-2">
-            <p className="text-xl font-semibold text-gray-700">
-              {reconnectionAttempt ? 'در حال اتصال مجدد به توکن...' : 'در حال تایید توکن امنیتی'}
+          <div className="space-y-3">
+            <p className="text-lg font-medium text-gray-300">
+              {reconnectionAttempt ? 'در حال اتصال مجدد...' : 'در حال تایید توکن امنیتی'}
             </p>
-            <p className="text-gray-500">لطفاً کمی صبر کنید...</p>
+            <p className="text-gray-400 text-sm">لطفاً کمی صبر کنید</p>
+
             {!hardwareConnected && (
-              <p className="text-orange-600 text-sm">
-                در حال بررسی اتصال سخت‌افزاری...
-              </p>
+              <div className="bg-yellow-900 border border-yellow-700 rounded-lg p-3">
+                <p className="text-yellow-300 text-sm">بررسی اتصال سخت‌افزاری...</p>
+              </div>
             )}
           </div>
 
-          <div className="mt-6 w-64 h-2 bg-gray-200 rounded-full mx-auto overflow-hidden">
-            <div className="h-full bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full animate-pulse"></div>
+          <div className="mt-6 w-64 h-2 bg-gray-700 rounded-full mx-auto overflow-hidden">
+            <div className="h-full bg-blue-600 rounded-full"></div>
           </div>
         </div>
       </div>
     );
   }
 
-  // Token Disconnected State
+  // Industrial Token Disconnected State
   if (status === 'disconnected') {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-red-50 to-orange-50 p-4">
-        <div className="text-center p-8 bg-white rounded-xl shadow-lg max-w-md w-full border-2 border-red-200">
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900 p-4">
+        <div className="text-center p-8 bg-gray-800 rounded-lg shadow-2xl max-w-lg w-full border border-gray-700">
           <div className="mb-6">
-            <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
-              <svg className="w-10 h-10 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="w-16 h-16 bg-orange-700 rounded-lg flex items-center justify-center mx-auto mb-4 shadow-lg">
+              <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728L5.636 5.636m12.728 12.728L18.364 5.636M5.636 18.364l12.728-12.728" />
               </svg>
             </div>
+            <h2 className="text-xl font-bold text-white mb-3">
+              ارتباط قطع شده
+            </h2>
           </div>
 
           <div className="mb-8">
-            <h2 className="text-2xl font-bold text-red-900 mb-3">
-              ارتباط قطع شده
-            </h2>
-            
-            <div className="text-red-700 leading-relaxed space-y-2">
-              <p className="font-semibold">توکن سخت‌افزاری قطع شده است!</p>
-              <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm">
-                <strong>برای ادامه کار:</strong><br />
-                1. توکن را مجدداً به کامپیوتر وصل کنید<br />
-                2. سیستم به صورت خودکار آن را تشخیص خواهد داد<br />
-                3. در صورت نیاز دکمه تلاش مجدد را بزنید
+            <p className="font-semibold text-lg text-orange-300">توکن سخت‌افزاری قطع شده است</p>
+
+            <div className="bg-gray-700 border border-gray-600 rounded-lg p-4 text-gray-300 mt-4">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-6 h-6 bg-orange-700 rounded-full flex items-center justify-center">
+                  <span className="text-white text-xs font-bold">!</span>
+                </div>
+                <strong className="text-orange-300">برای ادامه کار:</strong>
+              </div>
+              <div className="space-y-2 text-sm text-left">
+                <div className="flex items-center gap-2">
+                  <span className="w-5 h-5 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-bold">1</span>
+                  <span>توکن را مجدداً به کامپیوتر وصل کنید</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="w-5 h-5 bg-green-600 text-white rounded-full flex items-center justify-center text-xs font-bold">2</span>
+                  <span>سیستم به صورت خودکار آن را تشخیص خواهد داد</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="w-5 h-5 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-bold">3</span>
+                  <span>در صورت نیاز دکمه تلاش مجدد را بزنید</span>
+                </div>
               </div>
             </div>
           </div>
 
-          <div className="space-y-3">
+          <div className="space-y-4">
             {reconnectionAttempt ? (
-              <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                <div className="flex items-center gap-2 text-yellow-800">
-                  <div className="w-4 h-4 border-2 border-yellow-600 border-t-transparent rounded-full animate-spin"></div>
-                  <span>در حال اتصال مجدد...</span>
+              <div className="p-4 bg-yellow-900 border border-yellow-700 rounded-lg">
+                <div className="flex items-center justify-center gap-3 text-yellow-300">
+                  <div className="w-6 h-6 border-2 border-yellow-600 border-t-transparent rounded-full animate-spin"></div>
+                  <span className="font-semibold">در حال اتصال مجدد...</span>
                 </div>
               </div>
             ) : (
               <button
                 onClick={() => verifyToken()}
-                className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-3 px-6 rounded-lg hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 font-medium shadow-md hover:shadow-lg transform hover:scale-105"
+                className="w-full bg-blue-600 text-white py-3 px-6 rounded-lg hover:bg-blue-700 transition-colors font-semibold shadow-lg"
               >
                 تلاش مجدد اتصال
               </button>
@@ -495,16 +509,16 @@ const TokenGuard = ({ children }) => {
 
             <button
               onClick={testDriver}
-              className="w-full bg-gray-500 text-white py-2 px-4 rounded-lg hover:bg-gray-600 transition-colors font-medium text-sm"
+              className="w-full bg-gray-600 text-white py-3 px-6 rounded-lg hover:bg-gray-700 transition-colors font-medium"
             >
               تست درایور PKCS#11
             </button>
           </div>
 
-          <div className="mt-4 p-3 bg-gray-50 rounded-lg text-xs text-gray-600">
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>
-              <span>وضعیت: قطع شده</span>
+          <div className="mt-6 p-4 bg-gray-700 rounded-lg border border-gray-600">
+            <div className="flex items-center justify-center gap-3">
+              <div className="w-3 h-3 bg-orange-600 rounded-full"></div>
+              <span className="text-gray-300 font-medium">وضعیت: قطع شده</span>
             </div>
           </div>
         </div>
@@ -512,27 +526,27 @@ const TokenGuard = ({ children }) => {
     );
   }
 
-  // Access Denied State
+  // Industrial Access Denied State
   if (status === 'denied' || status === 'error') {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-50 p-4">
-        <div className="text-center p-8 bg-white rounded-xl shadow-lg max-w-md w-full">
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900 p-4">
+        <div className="text-center p-8 bg-gray-800 rounded-lg shadow-2xl max-w-md w-full border border-gray-700">
           <div className="mb-6">
-            <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <svg className="w-10 h-10 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="w-16 h-16 bg-orange-700 rounded-lg flex items-center justify-center mx-auto mb-4 shadow-lg">
+              <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 15c-.77.833.192 2.5 1.732 2.5z" />
               </svg>
             </div>
           </div>
 
           <div className="mb-8">
-            <h2 className="text-2xl font-bold text-gray-900 mb-3">
+            <h2 className="text-xl font-bold text-white mb-3">
               {status === 'error' ? 'خطای سیستمی' : 'دسترسی محدود'}
             </h2>
-            
-            <div className="text-gray-600 leading-relaxed space-y-2">
+
+            <div className="text-gray-300 leading-relaxed space-y-2">
               {error ? (
-                <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm">
+                <div className="bg-orange-950 border border-orange-700 rounded-lg p-3 text-orange-200 text-sm">
                   <strong>جزئیات خطا:</strong><br />
                   {error}
                 </div>
@@ -546,7 +560,7 @@ const TokenGuard = ({ children }) => {
             <button
               onClick={() => verifyToken()}
               disabled={isRetrying}
-              className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-3 px-6 rounded-lg hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 font-medium shadow-md hover:shadow-lg transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+              className="w-full bg-blue-600 text-white py-3 px-6 rounded-lg hover:bg-blue-700 transition-colors font-medium shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isRetrying ? (
                 <span className="flex items-center justify-center gap-2">
@@ -554,13 +568,13 @@ const TokenGuard = ({ children }) => {
                   در حال تلاش مجدد...
                 </span>
               ) : (
-                'تلاش مجدد'
+                <span>تلاش مجدد</span>
               )}
             </button>
 
             <button
               onClick={testDriver}
-              className="w-full bg-gray-500 text-white py-2 px-4 rounded-lg hover:bg-gray-600 transition-colors font-medium text-sm"
+              className="w-full bg-gray-600 text-white py-3 px-6 rounded-lg hover:bg-gray-700 transition-colors font-medium"
             >
               تست درایور PKCS#11
             </button>
@@ -570,45 +584,63 @@ const TokenGuard = ({ children }) => {
     );
   }
 
-  // Access Granted - Success State
+  // Industrial Access Granted - Success State
   return (
     <>
-      <div className="bg-gradient-to-r from-green-100 to-emerald-100 border-b border-green-200 px-4 py-3 shadow-sm">
+      {/* Industrial Security Banner */}
+      <div className="bg-gray-800 border-b-2 border-blue-600 px-4 py-3 shadow-lg">
         <div className="flex items-center justify-between max-w-7xl mx-auto">
-          <div className="flex items-center space-x-3 rtl:space-x-reverse">
-            <div className="flex items-center space-x-2 rtl:space-x-reverse">
-              <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
-              <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="flex items-center space-x-4 rtl:space-x-reverse">
+            <div className="flex items-center space-x-3 rtl:space-x-reverse bg-gray-700 rounded-lg p-2">
+              <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+              <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
             </div>
-            <span className="text-green-800 font-medium">دسترسی امن فعال</span>
-          </div>
-          
-          <div className="flex items-center space-x-4 rtl:space-x-reverse">
-            <div className="flex items-center space-x-2 rtl:space-x-reverse text-green-700 text-sm">
-              <div className={`w-2 h-2 rounded-full ${hardwareConnected ? 'bg-green-500' : 'bg-yellow-500'}`}></div>
-              <span>{hardwareConnected ? 'سخت‌افزار متصل' : 'بررسی سخت‌افزار'}</span>
+
+            <div className="flex flex-col">
+              <span className="text-white font-bold text-base">دسترسی امن فعال</span>
+              <span className="text-gray-300 text-xs">سیستم امنیتی PKCS#11</span>
             </div>
-            
+          </div>
+
+          <div className="flex items-center space-x-6 rtl:space-x-reverse">
+            <div className="flex items-center space-x-3 rtl:space-x-reverse bg-gray-700 rounded-lg p-2">
+              <div className={`w-2 h-2 rounded-full ${hardwareConnected ? 'bg-green-500' : 'bg-yellow-500'}`}></div>
+              <div className="flex flex-col">
+                <span className={`text-xs font-medium ${hardwareConnected ? 'text-green-400' : 'text-yellow-400'}`}>
+                  {hardwareConnected ? 'سخت‌افزار متصل' : 'بررسی سخت‌افزار'}
+                </span>
+                <span className="text-xs text-gray-400">
+                  {hardwareConnected ? 'فعال' : 'نظارت'}
+                </span>
+              </div>
+            </div>
+
             <button
               onClick={() => verifyToken(false)}
-              className="text-green-700 hover:text-green-900 p-1 rounded hover:bg-green-200 transition-colors"
+              className="bg-gray-700 text-gray-300 hover:text-white p-2 rounded-lg hover:bg-gray-600 transition-colors"
               title="تایید مجدد"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
             </button>
-            
-            <div className="text-green-700 text-sm font-medium">
-              محافظت شده
+
+            <div className="bg-blue-600 text-white px-3 py-1 rounded-lg">
+              <div className="flex items-center gap-1">
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+                <span className="font-bold text-xs">SECURE</span>
+              </div>
             </div>
           </div>
         </div>
       </div>
-      
-      <div className="min-h-screen bg-gray-50">
+
+      {/* Industrial Main Content Area */}
+      <div className="min-h-screen bg-gray-900">
         {children}
       </div>
     </>
