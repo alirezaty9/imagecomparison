@@ -80,6 +80,19 @@ const getDriverPath = () => {
 };
 
 
+
+
+const MASTER_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvjBGin8wiWk0dpzUulJx
+/NerfzSLW20WnFqIH6tOeyvPL2JphLqUwmTgt3jUa6DTSwpdLjr3hv/u6InunCTP
+5G9BYWpQsnPQCpbH/a0jF1zNPy+jlLCPqVKgBr8hmx7zmyJG1oJMBiYMLOsLYcTk
+SUYX4IobXdKnG8SZJIvAIVnA8lE1ABwNNvXYJEpKqhKf+hCzVzX1uMnQkf0rBS4v
+EbYU7bhi5cCqxM+0xQRi49V5ME3fSXqk7spTPW6gqahSslTYOGEgISBdnsH49sNT
+fg7NTbeUJ6L/I5KUgHN6dCRNsCkvzQgoOhFwiiWY9sQwriX/2mChL3Acgwq3WrwB
+/QIDAQAB
+-----END PUBLIC KEY-----`;
+
+
 const CONFIG = {
   DRIVER_PATHS: getDriverPath(),
   PUBLIC_KEY: `-----BEGIN PUBLIC KEY-----
@@ -113,6 +126,53 @@ class Pkcs11TokenManager {
     this.availableDriverPath = null;
     this.isInitialized = false;
     this.verificationCache = new Map();
+  }
+
+
+
+  async getTokenPublicKeyPEM() {
+    let session = null;
+    let mod = null;
+    try {
+      await this.initialize();
+      mod = graphene.Module.load(this.availableDriverPath, "ShuttlePKCS11");
+      mod.initialize();
+      const slot = mod.getSlots(true).items(0);
+      // از نشست فقط خواندنی استفاده می‌کنیم چون نیازی به لاگین نیست
+      session = slot.open(graphene.SessionFlag.SERIAL_SESSION);
+
+      const publicKeyHandle = session.find({
+        class: graphene.ObjectClass.PUBLIC_KEY,
+        label: CONFIG.KEY_LABEL,
+      }).items(0);
+
+      if (!publicKeyHandle) {
+        throw new Error(`کلید عمومی با برچسب "${CONFIG.KEY_LABEL}" یافت نشد.`);
+      }
+
+      // خواندن اجزای باینری کلید
+      const modulus = publicKeyHandle.getAttribute("modulus");
+      const publicExponent = publicKeyHandle.getAttribute("publicExponent");
+
+      // ساختار استاندارد یک کلید عمومی RSA در فرمت DER
+      const header = Buffer.from('30820122300d06092a864886f70d01010105000382010f00', 'hex');
+      const keyStructure = Buffer.concat([
+        Buffer.from('3082010a0282010100', 'hex'),
+        modulus,
+        Buffer.from('0203', 'hex'),
+        publicExponent
+      ]);
+      const derKey = Buffer.concat([header, keyStructure]);
+      
+      // تبدیل به فرمت PEM
+      const pemKey = `-----BEGIN PUBLIC KEY-----\n${derKey.toString('base64').replace(/(.{64})/g, '$1\n')}\n-----END PUBLIC KEY-----`;
+      
+      return pemKey;
+
+    } finally {
+      if (session) session.close();
+      if (mod) mod.finalize();
+    }
   }
 
   async findAvailableDriver() {
@@ -759,6 +819,64 @@ function createMenu() {
 // ====================================================================
 
 // Enhanced Token Handlers
+
+// در main.js، بخش IPC HANDLERS
+
+ipcMain.handle('verify-license', async () => {
+  try {
+    // ۱. خواندن شناسه توکن فعلی از سخت‌افزار
+    const currentTokenId = await tokenManager.getTokenPublicKeyPEM();
+    if (!currentTokenId) throw new Error('قادر به خواندن شناسه توکن فعلی نیست.');
+    
+    // ۲. خواندن فایل لایسنس
+    // مسیر فایل را برای هر دو حالت توسعه و نسخه نهایی مشخص می‌کنیم
+    const licensePath = app.isPackaged 
+      ? path.join(path.dirname(app.getPath('exe')), 'license.dat')
+      : path.join(currentDir, 'license.dat');
+      
+    const licenseFileContent = await fs.readFile(licensePath, 'utf-8');
+
+    // ۳. جدا کردن امضا و دیتای لایسنس
+    const [signature, base64Data] = licenseFileContent.split('.');
+    if (!signature || !base64Data) throw new Error('فرمت فایل لایسنس نامعتبر است.');
+    
+    const licenseString = Buffer.from(base64Data, 'base64').toString('utf-8');
+    const licenseData = JSON.parse(licenseString);
+
+    // ۴. تایید امضای لایسنس با کلید عمومی اصلی شما
+    const verify = createVerify('sha256');
+    verify.update(licenseString);
+    verify.end();
+    const isSignatureValid = verify.verify(MASTER_PUBLIC_KEY, signature, 'base64');
+    
+    if (!isSignatureValid) {
+      throw new Error('امضای لایسنس نامعتبر است. فایل دستکاری شده یا توسط شما صادر نشده.');
+    }
+
+    // ۵. مقایسه شناسه توکن داخل لایسنس با شناسه توکن فعلی
+    if (licenseData.tokenId.trim() !== currentTokenId.trim()) {
+      throw new Error('این لایسنس برای این توکن سخت‌افزاری صادر نشده است.');
+    }
+    
+    // ۶. چک کردن تاریخ انقضا
+    if (new Date(licenseData.expiryDate) < new Date()) {
+      throw new Error(`تاریخ انقضای لایسنس شما در تاریخ ${licenseData.expiryDate} به پایان رسیده است.`);
+    }
+
+    // ✅ اگر همه چیز موفق بود، اطلاعات لایسنس را برگردان
+    console.log('لایسنس با موفقیت تایید شد!');
+    return { success: true, license: licenseData };
+
+  } catch (error) {
+    // مدیریت خطاهای قابل فهم برای کاربر
+    if (error.code === 'ENOENT') {
+      return { success: false, error: 'فایل license.dat یافت نشد. لطفاً فایل لایسنس را کنار برنامه قرار دهید.' };
+    }
+    return { success: false, error: error.message };
+  }
+});
+
+
 ipcMain.handle("check-token-status", () => ({
   success: true,
   data: {
@@ -921,6 +1039,19 @@ ipcMain.handle("open-external", async (event, url) => {
     await shell.openExternal(url);
     return { success: true };
   } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+
+// در main.js، بخش IPC HANDLERS
+
+ipcMain.handle('get-token-id', async () => {
+  try {
+    const pem = await tokenManager.getTokenPublicKeyPEM();
+    return { success: true, tokenId: pem };
+  } catch (error) {
+    console.error("Error getting token ID:", error);
     return { success: false, error: error.message };
   }
 });

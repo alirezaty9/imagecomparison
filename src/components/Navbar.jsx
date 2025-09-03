@@ -26,6 +26,12 @@ export default function Navbar() {
       icon: "⚙️",
       label: "تنظیمات",
       description: "اطلاعات و تنظیمات"
+    },
+    { // <-- آیتم جدید اینجا اضافه شد
+      path: "/license",
+      icon: "🔑",
+      label: "لایسنس",
+      description: "فعال‌سازی و مدیریت"
     }
   ];
 
@@ -114,7 +120,7 @@ export default function Navbar() {
                 <div className={`absolute inset-0 transition-all duration-500 ease-out ${
                   isMenuOpen ? 'rotate-180 scale-0 opacity-0' : 'rotate-0 scale-100 opacity-100'
                 }`}>
-                  <svg className="w-7 h-7 group-hover:scale-110 transition-transform duration-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <svg className="w-7 h-7 group-hover:scale-110 transition-transform duration-300" fill="none" viewBox="0 alireza@alireza:~/Desktop/ElectronApp$ 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
                   </svg>
                 </div>

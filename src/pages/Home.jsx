@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
+import { useLicense } from '../components/TokenGuard';
 
 export default function ImageSimilaritySearch() {
   const [selectedImage, setSelectedImage] = useState(null);
@@ -25,6 +26,9 @@ export default function ImageSimilaritySearch() {
   const [isProcessingSigning, setIsProcessingSigning] = useState(false);
   const [signResult, setSignResult] = useState(null);
 
+  // دریافت اطلاعات لایسنس
+  const license = useLicense();
+
   // Load settings and initialize on component mount
   useEffect(() => {
     loadSettings();
@@ -41,6 +45,22 @@ export default function ImageSimilaritySearch() {
       }
     };
   }, []);
+
+  // بررسی دسترسی AI
+  const checkAIAccess = useCallback(() => {
+    return license?.isValid && license?.features?.aiAccess === true;
+  }, [license]);
+
+  // پیام عدم دسترسی AI
+  const getAIAccessDeniedMessage = useCallback(() => {
+    if (!license?.isValid) {
+      return "لایسنس شما نامعتبر است. برای استفاده از قابلیت‌های AI، لطفاً لایسنس معتبر تهیه کنید.";
+    }
+    if (license?.features?.aiAccess !== true) {
+      return "قابلیت دسترسی به AI در لایسنس شما فعال نیست. برای استفاده از این ویژگی، لطفاً نسخه کامل لایسنس را تهیه کنید.";
+    }
+    return "دسترسی به AI امکان‌پذیر نیست.";
+  }, [license]);
 
   // Initialize token event listeners
   const initializeTokenListeners = useCallback(() => {
@@ -334,9 +354,15 @@ export default function ImageSimilaritySearch() {
     }
   }, [apiUrl]);
 
-  // Enhanced AI description function
+  // Enhanced AI description function with license check
   const getAIDescription = useCallback(
     async (imageFile) => {
+      // بررسی دسترسی AI
+      if (!checkAIAccess()) {
+        setAiDescription(getAIAccessDeniedMessage());
+        return;
+      }
+
       setIsLoadingAI(true);
       setAiDescription(null);
 
@@ -411,12 +437,25 @@ export default function ImageSimilaritySearch() {
         setIsLoadingAI(false);
       }
     },
-    [aiApiUrl]
+    [aiApiUrl, checkAIAccess, getAIAccessDeniedMessage]
   );
 
-  // Enhanced chat functionality
+  // Enhanced chat functionality with license check
   const sendChatMessage = useCallback(async () => {
     if (!currentMessage.trim() || !selectedImage) return;
+
+    // بررسی دسترسی AI
+    if (!checkAIAccess()) {
+      const errorMessage = {
+        role: "assistant",
+        content: getAIAccessDeniedMessage(),
+        timestamp: new Date().toLocaleTimeString("fa-IR"),
+        isError: true,
+        isLicenseError: true,
+      };
+      setChatMessages((prev) => [...prev, errorMessage]);
+      return;
+    }
 
     setIsLoadingChat(true);
     const userMessage = currentMessage.trim();
@@ -456,7 +495,7 @@ export default function ImageSimilaritySearch() {
     } catch (error) {
       addErrorMessage("خطا در ارسال پیام چت");
     }
-  }, [currentMessage, selectedImage]);
+  }, [currentMessage, selectedImage, checkAIAccess, getAIAccessDeniedMessage]);
 
   const processChat = useCallback(
     async (base64Data, userMessage) => {
@@ -932,35 +971,35 @@ export default function ImageSimilaritySearch() {
           </div>
         </div>
 
-            {/* Token Verification Result Display */}
-      {signResult && (
-        <div
-          className={`fixed top-5 left-1/2 transform -translate-x-1/2 z-50 max-w-md w-full mx-4 p-4 rounded-lg shadow-lg border ${
-            signResult.success
-              ? "bg-green-900 border-green-700 text-green-300"
-              : "bg-orange-900 border-orange-700 text-orange-300"
-          }`}
-        >
-          <div className="flex items-start gap-3">
-            <span className="text-2xl">{signResult.success ? "✅" : "❌"}</span>
-            <div className="flex-1">
-              <h3 className="font-bold text-lg mb-2">
-                {signResult.success
-                  ? "تایید PKCS#11 موفق"
-                  : "خطا در تایید PKCS#11"}
-              </h3>
-              <p className="text-sm mb-3">{signResult.message}</p>
+        {/* Token Verification Result Display */}
+        {signResult && (
+          <div
+            className={`fixed top-5 left-1/2 transform -translate-x-1/2 z-50 max-w-md w-full mx-4 p-4 rounded-lg shadow-lg border ${
+              signResult.success
+                ? "bg-green-900 border-green-700 text-green-300"
+                : "bg-orange-900 border-orange-700 text-orange-300"
+            }`}
+          >
+            <div className="flex items-start gap-3">
+              <span className="text-2xl">{signResult.success ? "✅" : "❌"}</span>
+              <div className="flex-1">
+                <h3 className="font-bold text-lg mb-2">
+                  {signResult.success
+                    ? "تایید PKCS#11 موفق"
+                    : "خطا در تایید PKCS#11"}
+                </h3>
+                <p className="text-sm mb-3">{signResult.message}</p>
 
-              <button
-                onClick={() => setSignResult(null)}
-                className="mt-2 px-2 py-1 bg-gray-700 text-white rounded text-xs hover:bg-gray-800"
-              >
-                بستن
-              </button>
+                <button
+                  onClick={() => setSignResult(null)}
+                  className="mt-2 px-2 py-1 bg-gray-700 text-white rounded text-xs hover:bg-gray-800"
+                >
+                  بستن
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
         {/* Compact PKCS#11 Token Panel */}
         <div className="card mb-6">
@@ -1004,6 +1043,80 @@ export default function ImageSimilaritySearch() {
           </div>
         </div>
 
+        {/* License Status Display */}
+        {license && (
+          <div className="card mb-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                  license.isValid 
+                    ? 'bg-gradient-to-br from-green-600 to-emerald-600' 
+                    : 'bg-gradient-to-br from-red-600 to-orange-600'
+                }`}>
+                  <span className="text-lg">{license.isValid ? '🛡️' : '⚠️'}</span>
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-white">وضعیت لایسنس</h2>
+                  <p className="text-xs text-slate-400">
+                    {license.isValid ? 'لایسنس معتبر' : 'لایسنس نامعتبر یا منقضی'}
+                  </p>
+                </div>
+              </div>
+              <div className={`px-3 py-1 rounded-full text-xs font-bold ${
+                license.isValid 
+                  ? 'bg-green-900 text-green-300 border border-green-700' 
+                  : 'bg-red-900 text-red-300 border border-red-700'
+              }`}>
+                {license.isValid ? 'فعال' : 'غیرفعال'}
+              </div>
+            </div>
+
+            {/* License Features Status */}
+            {license.features && (
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                <div className="flex items-center gap-2 p-2 bg-gray-700/50 rounded">
+                  <div className={`w-2 h-2 rounded-full ${license.features.imageComparison ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                  <span className="text-sm text-gray-300">مقایسه تصاویر</span>
+                </div>
+                <div className="flex items-center gap-2 p-2 bg-gray-700/50 rounded">
+                  <div className={`w-2 h-2 rounded-full ${license.features.aiAccess ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                  <span className="text-sm text-gray-300">دسترسی AI</span>
+                </div>
+                <div className="flex items-center gap-2 p-2 bg-gray-700/50 rounded">
+                  <div className={`w-2 h-2 rounded-full ${license.features.advancedExport ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                  <span className="text-sm text-gray-300">خروجی پیشرفته</span>
+                </div>
+              </div>
+            )}
+
+            {/* License Details */}
+            {license.details && license.isValid && (
+              <div className="mt-4 p-3 bg-green-900/30 border border-green-700/50 rounded">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+                  {license.details.customerName && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">مشتری:</span>
+                      <span className="text-green-300">{license.details.customerName}</span>
+                    </div>
+                  )}
+                  {license.details.expiryDate && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">انقضا:</span>
+                      <span className="text-green-300">{license.details.expiryDate}</span>
+                    </div>
+                  )}
+                  {license.details.type && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">نوع:</span>
+                      <span className="text-green-300">{license.details.type}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Compact Connection Status */}
         <div className="mb-6">
           {connectionStatus === "connected" && apiInfo && (
@@ -1042,515 +1155,585 @@ export default function ImageSimilaritySearch() {
         <div className="card mb-6">
           <h2 className="text-lg font-bold text-white mb-4">تنظیمات</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
-              آدرس سرور جستجو
-            </label>
-            <div className="flex gap-2">
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                آدرس سرور جستجو
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={apiUrl}
+                  onChange={(e) => setApiUrl(e.target.value)}
+                  className="flex-1 px-3 py-2 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-gray-700 text-white"
+                  placeholder="http://192.168.88.69:8000"
+                />
+                <button
+                  onClick={checkConnection}
+                  className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
+                >
+                  تست
+                </button>
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                آدرس سرور AI
+              </label>
               <input
                 type="text"
-                value={apiUrl}
-                onChange={(e) => setApiUrl(e.target.value)}
-                className="flex-1 px-3 py-2 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-gray-700 text-white"
-                placeholder="http://192.168.88.69:8000"
+                value={aiApiUrl}
+                onChange={(e) => setAiApiUrl(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-gray-700 text-white"
+                placeholder="http://192.168.88.69:11434"
               />
-              <button
-                onClick={checkConnection}
-                className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                دقت جستجو ({threshold}%)
+              </label>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={threshold}
+                onChange={(e) => setThreshold(parseInt(e.target.value))}
+                className="w-full"
+              />
+              <div className="text-xs text-gray-500 mt-1">
+                کمتر = نتایج بیشتر، بیشتر = نتایج دقیق‌تر
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                تعداد نتایج
+              </label>
+              <select
+                value={maxResults}
+                onChange={(e) => setMaxResults(parseInt(e.target.value))}
+                className="w-full px-3 py-2 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-gray-700 text-white"
               >
-                تست
-              </button>
+                <option value={5}>5 تصویر</option>
+                <option value={10}>10 تصویر</option>
+                <option value={20}>20 تصویر</option>
+                <option value={50}>50 تصویر</option>
+              </select>
             </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
-              آدرس سرور AI
-            </label>
-            <input
-              type="text"
-              value={aiApiUrl}
-              onChange={(e) => setAiApiUrl(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-gray-700 text-white"
-              placeholder="http://192.168.88.69:11434"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
-              دقت جستجو ({threshold}%)
-            </label>
-            <input
-              type="range"
-              min="0"
-              max="100"
-              value={threshold}
-              onChange={(e) => setThreshold(parseInt(e.target.value))}
-              className="w-full"
-            />
-            <div className="text-xs text-gray-500 mt-1">
-              کمتر = نتایج بیشتر، بیشتر = نتایج دقیق‌تر
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
-              تعداد نتایج
-            </label>
-            <select
-              value={maxResults}
-              onChange={(e) => setMaxResults(parseInt(e.target.value))}
-              className="w-full px-3 py-2 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-gray-700 text-white"
-            >
-              <option value={5}>5 تصویر</option>
-              <option value={10}>10 تصویر</option>
-              <option value={20}>20 تصویر</option>
-              <option value={50}>50 تصویر</option>
-            </select>
-          </div>
-        </div>
-        <div className="mt-4 flex gap-2">
-          <button
-            onClick={saveSettings}
-            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
-          >
-            ذخیره تنظیمات
-          </button>
-        </div>
-      </div>
-
-      {/* Upload Section */}
-      <div className="bg-gray-800 rounded-lg shadow-lg p-6 mb-6 border border-gray-700">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-semibold text-white">انتخاب تصویر</h2>
-          {selectedImage && (
+          <div className="mt-4 flex gap-2">
             <button
-              onClick={removeImage}
-              className="px-3 py-1 bg-orange-600 text-white rounded text-sm hover:bg-orange-700"
+              onClick={saveSettings}
+              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
             >
-              حذف تصویر
+              ذخیره تنظیمات
             </button>
+          </div>
+        </div>
+
+        {/* Upload Section */}
+        <div className="bg-gray-800 rounded-lg shadow-lg p-6 mb-6 border border-gray-700">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-lg font-semibold text-white">انتخاب تصویر</h2>
+            {selectedImage && (
+              <button
+                onClick={removeImage}
+                className="px-3 py-1 bg-orange-600 text-white rounded text-sm hover:bg-orange-700"
+              >
+                حذف تصویر
+              </button>
+            )}
+          </div>
+
+          {!selectedImage ? (
+            <div
+              className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors duration-200 ${
+                dragOver
+                  ? "border-blue-400 bg-gray-800"
+                  : "border-gray-600 hover:border-blue-500"
+              }`}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+            >
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleFileUpload}
+                className="hidden"
+                id="imageInput"
+              />
+
+              <div className="space-y-4">
+                <div className="text-6xl text-gray-400">📷</div>
+                <button
+                  onClick={openFileDialog}
+                  className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                >
+                  انتخاب تصویر
+                </button>
+                <p className="text-gray-400 text-sm">یا تصویر را به اینجا بکشید</p>
+                <p className="text-xs text-gray-500 mt-2">
+                  فرمت‌های مجاز: JPG, PNG, GIF, BMP, WEBP (حداکثر 50 مگابایت)
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="border rounded-lg p-4 bg-slate-800 border-slate-700">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Image & AI Description Section */}
+                <div>
+                  <div className="flex items-center gap-4 mb-4">
+                    <img
+                      src={selectedImage.url}
+                      alt={selectedImage.name}
+                      className="w-20 h-20 object-cover rounded-lg shadow-md hover:scale-110 transition-transform"
+                    />
+                    <div className="flex-1">
+                      <h3 className="font-medium text-white">{selectedImage.name}</h3>
+                      <p className="text-sm text-slate-400">
+                        {formatFileSize(selectedImage.size)}
+                      </p>
+                      {selectedImage.uploadedAt && (
+                        <p className="text-xs text-slate-500">
+                          {new Date(selectedImage.uploadedAt).toLocaleString(
+                            "fa-IR"
+                          )}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* AI Description */}
+                  <div className="bg-gray-700 rounded-lg p-4 border border-gray-600">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xl">🤖</span>
+                        <h3 className="font-semibold text-white">
+                          توضیح هوش مصنوعی
+                        </h3>
+                      </div>
+                      {aiDescription && checkAIAccess() && (
+                        <button
+                          onClick={() => {
+                            if (selectedImage.file) {
+                              getAIDescription(selectedImage.file);
+                            } else if (selectedImage.url) {
+                              const file = base64ToFile(
+                                selectedImage.url,
+                                selectedImage.name,
+                                selectedImage.type
+                              );
+                              if (file) getAIDescription(file);
+                            }
+                          }}
+                          className="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700"
+                          disabled={isLoadingAI}
+                        >
+                          🔄 تجدید
+                        </button>
+                      )}
+                    </div>
+
+                    {isLoadingAI ? (
+                      <div className="flex items-center gap-2 text-blue-400 p-3 bg-blue-900 rounded">
+                        <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                        <span className="text-sm">
+                          در حال تحلیل تصویر با هوش مصنوعی...
+                        </span>
+                      </div>
+                    ) : aiDescription ? (
+                      <div className={`rounded p-3 border-l-4 ${
+                        !checkAIAccess() 
+                          ? 'bg-orange-900/30 border-orange-500' 
+                          : 'bg-gray-600 border-blue-500'
+                      }`}>
+                        <p className={`text-sm leading-relaxed ${
+                          !checkAIAccess() 
+                            ? 'text-orange-300' 
+                            : 'text-gray-300'
+                        }`}>
+                          {aiDescription}
+                        </p>
+                        {!checkAIAccess() && (
+                          <div className="mt-3 p-2 bg-orange-800/50 rounded text-xs text-orange-200">
+                            💡 برای استفاده از قابلیت‌های کامل AI، لطفاً نسخه کامل لایسنس را تهیه کنید.
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="text-gray-400 text-sm p-3 bg-gray-800 rounded">
+                        هنوز توضیحی دریافت نشده است
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Chat Section */}
+                <div>
+                  <div className="bg-gray-700 rounded-lg p-4 border border-gray-600 h-full">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xl">💬</span>
+                        <h3 className="font-semibold text-white">
+                          چت با AI درباره تصویر
+                        </h3>
+                      </div>
+                      {chatMessages.length > 0 && (
+                        <button
+                          onClick={() => setChatMessages([])}
+                          className="px-2 py-1 bg-gray-600 text-white rounded text-xs hover:bg-gray-700"
+                        >
+                          🗑️ پاک کردن
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Chat Messages */}
+                    <div className="h-80 overflow-y-auto mb-3 space-y-2 bg-gray-800 rounded p-2 border border-gray-600">
+                      {chatMessages.length === 0 ? (
+                        <div className="text-gray-400 text-sm text-center py-8">
+                          <div className="text-4xl mb-2">🤔</div>
+                          <p>سوال خود را درباره تصویر بپرسید</p>
+                          <p className="text-xs mt-1">
+                            مثال: این تصویر چه رنگی است؟
+                          </p>
+                        </div>
+                      ) : (
+                        chatMessages.map((message, index) => (
+                          <div
+                            key={index}
+                            className={`p-3 rounded-lg text-sm shadow-sm ${
+                              message.role === "user"
+                                ? "bg-blue-900/30 text-blue-200 mr-6 border-l-4 border-blue-500"
+                                : message.isError
+                                ? message.isLicenseError
+                                  ? "bg-orange-900/30 text-orange-200 ml-6 border-l-4 border-orange-500"
+                                  : "bg-red-900/30 text-red-200 ml-6 border-l-4 border-red-500"
+                                : "bg-slate-700/50 text-slate-200 ml-6 border-l-4 border-slate-500"
+                            }`}
+                          >
+                            <div className="flex justify-between items-start gap-2">
+                              <div className="flex-1">
+                                <div className="font-medium text-xs mb-1 opacity-75">
+                                  {message.role === "user" ? "👤 شما" : "🤖 AI"}
+                                </div>
+                                <div className="leading-relaxed">
+                                  {message.content}
+                                </div>
+                                {message.isLicenseError && (
+                                  <div className="mt-2 p-2 bg-orange-800/50 rounded text-xs">
+                                    💡 برای تهیه لایسنس کامل با ما تماس بگیرید.
+                                  </div>
+                                )}
+                              </div>
+                              <div className="text-xs opacity-60 flex-shrink-0">
+                                {message.timestamp}
+                              </div>
+                            </div>
+                          </div>
+                        ))
+                      )}
+
+                      {isLoadingChat && (
+                        <div className="bg-gray-600 text-gray-300 ml-6 p-3 rounded-lg border-l-4 border-blue-500">
+                          <div className="flex items-center gap-2">
+                            <div className="w-3 h-3 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                            <span className="text-sm">
+                              AI در حال پاسخ دادن...
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Chat Input */}
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={currentMessage}
+                        onChange={(e) => setCurrentMessage(e.target.value)}
+                        onKeyPress={(e) => {
+                          if (e.key === "Enter" && !e.shiftKey) {
+                            e.preventDefault();
+                            sendChatMessage();
+                          }
+                        }}
+                        placeholder={checkAIAccess() ? "سوال خود را بپرسید..." : "برای استفاده از چت AI، لایسنس کامل لازم است..."}
+                        className="flex-1 px-3 py-2 border border-gray-600 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-700 text-white"
+                        disabled={isLoadingChat || !checkAIAccess()}
+                      />
+                      <button
+                        onClick={sendChatMessage}
+                        disabled={isLoadingChat || !currentMessage.trim() || !checkAIAccess()}
+                        className="px-4 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        title={!checkAIAccess() ? "برای استفاده از چت AI، لایسنس کامل لازم است" : ""}
+                      >
+                        ارسال
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           )}
         </div>
 
-        {!selectedImage ? (
-          <div
-            className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors duration-200 ${
-              dragOver
-                ? "border-blue-400 bg-gray-800"
-                : "border-gray-600 hover:border-blue-500"
-            }`}
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
-          >
-            <input
-              type="file"
-              accept="image/*"
-              onChange={handleFileUpload}
-              className="hidden"
-              id="imageInput"
-            />
+        {/* Search Button */}
+        {selectedImage && (
+          <div className="text-center mb-6">
+            <button
+              onClick={searchSimilarImages}
+              disabled={isLoading || connectionStatus !== "connected"}
+              className="px-8 py-3 bg-green-600 text-white rounded-lg text-lg font-semibold hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {isLoading ? (
+                <span className="flex items-center gap-2 justify-center">
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  در حال جستجو...
+                </span>
+              ) : (
+                "🔍 جستجوی تصاویر مشابه"
+              )}
+            </button>
+          </div>
+        )}
 
-            <div className="space-y-4">
-              <div className="text-6xl text-gray-400">📷</div>
-              <button
-                onClick={openFileDialog}
-                className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
-              >
-                انتخاب تصویر
-              </button>
-              <p className="text-gray-400 text-sm">یا تصویر را به اینجا بکشید</p>
-              <p className="text-xs text-gray-500 mt-2">
-                فرمت‌های مجاز: JPG, PNG, GIF, BMP, WEBP (حداکثر 50 مگابایت)
-              </p>
+        {/* Messages */}
+        {error && (
+          <div className="bg-orange-900 border border-orange-700 rounded-lg p-4 mb-6">
+            <div className="flex items-center gap-2 text-orange-300">
+              <span>⚠️</span>
+              <span>{error}</span>
             </div>
           </div>
-        ) : (
-          <div className="border rounded-lg p-4 bg-slate-800 border-slate-700">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Image & AI Description Section */}
-              <div>
-                <div className="flex items-center gap-4 mb-4">
-                  <img
-                    src={selectedImage.url}
-                    alt={selectedImage.name}
-                    className="w-20 h-20 object-cover rounded-lg shadow-md hover:scale-110 transition-transform"
-                  />
-                  <div className="flex-1">
-                    <h3 className="font-medium text-white">{selectedImage.name}</h3>
-                    <p className="text-sm text-slate-400">
-                      {formatFileSize(selectedImage.size)}
-                    </p>
-                    {selectedImage.uploadedAt && (
-                      <p className="text-xs text-slate-500">
-                        {new Date(selectedImage.uploadedAt).toLocaleString(
-                          "fa-IR"
-                        )}
-                      </p>
-                    )}
-                  </div>
-                </div>
+        )}
 
-                {/* AI Description */}
-                <div className="bg-gray-700 rounded-lg p-4 border border-gray-600">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xl">🤖</span>
-                      <h3 className="font-semibold text-white">
-                        توضیح هوش مصنوعی
-                      </h3>
-                    </div>
-                    {aiDescription && (
-                      <button
-                        onClick={() => {
-                          if (selectedImage.file) {
-                            getAIDescription(selectedImage.file);
-                          } else if (selectedImage.url) {
-                            const file = base64ToFile(
-                              selectedImage.url,
-                              selectedImage.name,
-                              selectedImage.type
-                            );
-                            if (file) getAIDescription(file);
-                          }
-                        }}
-                        className="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700"
-                        disabled={isLoadingAI}
-                      >
-                        🔄 تجدید
-                      </button>
-                    )}
-                  </div>
+        {success && (
+          <div className="bg-green-900 border border-green-700 rounded-lg p-4 mb-6">
+            <div className="flex items-center gap-2 text-green-300">
+              <span>✅</span>
+              <span>{success}</span>
+            </div>
+          </div>
+        )}
 
-                  {isLoadingAI ? (
-                    <div className="flex items-center gap-2 text-blue-400 p-3 bg-blue-900 rounded">
-                      <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                      <span className="text-sm">
-                        در حال تحلیل تصویر با هوش مصنوعی...
-                      </span>
-                    </div>
-                  ) : aiDescription ? (
-                    <div className="bg-gray-600 rounded p-3 border-l-4 border-blue-500">
-                      <p className="text-gray-300 text-sm leading-relaxed">
-                        {aiDescription}
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="text-gray-400 text-sm p-3 bg-gray-800 rounded">
-                      هنوز توضیحی دریافت نشده است
-                    </div>
-                  )}
-                </div>
-              </div>
+        {/* Search Results */}
+        {searchResults.length > 0 && (
+          <div className="bg-gray-800 rounded-lg shadow-lg p-6 border border-gray-700">
+            <h2 className="text-xl font-semibold text-white mb-4">
+              نتایج جستجو ({searchResults.length} تصویر)
+            </h2>
 
-              {/* Chat Section */}
-              <div>
-                <div className="bg-gray-700 rounded-lg p-4 border border-gray-600 h-full">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xl">💬</span>
-                      <h3 className="font-semibold text-white">
-                        چت با AI درباره تصویر
-                      </h3>
-                    </div>
-                    {chatMessages.length > 0 && (
-                      <button
-                        onClick={() => setChatMessages([])}
-                        className="px-2 py-1 bg-gray-600 text-white rounded text-xs hover:bg-gray-700"
-                      >
-                        🗑️ پاک کردن
-                      </button>
-                    )}
-                  </div>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              {searchResults.map((result, index) => {
+                const imageUrl = getImageUrl(result, index);
 
-                  {/* Chat Messages */}
-                  <div className="h-80 overflow-y-auto mb-3 space-y-2 bg-gray-800 rounded p-2 border border-gray-600">
-                    {chatMessages.length === 0 ? (
-                      <div className="text-gray-400 text-sm text-center py-8">
-                        <div className="text-4xl mb-2">🤔</div>
-                        <p>سوال خود را درباره تصویر بپرسید</p>
-                        <p className="text-xs mt-1">
-                          مثال: این تصویر چه رنگی است؟
-                        </p>
-                      </div>
-                    ) : (
-                      chatMessages.map((message, index) => (
-                        <div
-                          key={index}
-                          className={`p-3 rounded-lg text-sm shadow-sm ${
-                            message.role === "user"
-                              ? "bg-blue-900/30 text-blue-200 mr-6 border-l-4 border-blue-500"
-                              : message.isError
-                              ? "bg-orange-900/30 text-orange-200 ml-6 border-l-4 border-orange-500"
-                              : "bg-slate-700/50 text-slate-200 ml-6 border-l-4 border-slate-500"
+                return (
+                  <div
+                    key={index}
+                    className="border rounded-lg p-3 border-gray-600"
+                  >
+                    <div className="aspect-square mb-3 bg-gray-700 rounded-lg overflow-hidden">
+                      {imageUrl ? (
+                        <img
+                          src={imageUrl}
+                          alt={`شباهت ${result.similarity_score}%`}
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            e.target.src =
+                              "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjNmNGY2Ii8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtc2l6ZT0iMTIiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIiBmaWxsPSIjOWNhM2FmIj7YqtmI2LTZr9ix2Jkg2YfZjNio2KfYsdixPC90ZXh0Pjwvc3ZnPg==";
+                          }}
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-gray-400 text-sm">
+                          تصویر موجود نیست
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="text-center">
+                        <span
+                          className={`inline-block px-2 py-1 rounded text-sm font-bold ${
+                            result.similarity_score >= 80
+                              ? "text-green-400 bg-green-900"
+                              : result.similarity_score >= 60
+                              ? "text-yellow-400 bg-yellow-900"
+                              : "text-orange-400 bg-orange-900"
                           }`}
                         >
-                          <div className="flex justify-between items-start gap-2">
-                            <div className="flex-1">
-                              <div className="font-medium text-xs mb-1 opacity-75">
-                                {message.role === "user" ? "👤 شما" : "🤖 AI"}
-                              </div>
-                              <div className="leading-relaxed">
-                                {message.content}
-                              </div>
-                            </div>
-                            <div className="text-xs opacity-60 flex-shrink-0">
-                              {message.timestamp}
-                            </div>
-                          </div>
-                        </div>
-                      ))
-                    )}
-
-                    {isLoadingChat && (
-                      <div className="bg-gray-600 text-gray-300 ml-6 p-3 rounded-lg border-l-4 border-blue-500">
-                        <div className="flex items-center gap-2">
-                          <div className="w-3 h-3 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                          <span className="text-sm">
-                            AI در حال پاسخ دادن...
-                          </span>
-                        </div>
+                          {result.similarity_score.toFixed(1)}% شباهت
+                        </span>
                       </div>
-                    )}
-                  </div>
 
-                  {/* Chat Input */}
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={currentMessage}
-                      onChange={(e) => setCurrentMessage(e.target.value)}
-                      onKeyPress={(e) => {
-                        if (e.key === "Enter" && !e.shiftKey) {
-                          e.preventDefault();
-                          sendChatMessage();
-                        }
-                      }}
-                      placeholder="سوال خود را بپرسید..."
-                      className="flex-1 px-3 py-2 border border-gray-600 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-700 text-white"
-                      disabled={isLoadingChat}
-                    />
-                    <button
-                      onClick={sendChatMessage}
-                      disabled={isLoadingChat || !currentMessage.trim()}
-                      className="px-4 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      ارسال
-                    </button>
+                      <div className="w-full bg-gray-600 rounded-full h-2 overflow-hidden">
+                        <div
+                          className={`h-2 rounded-full ${
+                            result.similarity_score >= 80
+                              ? "bg-green-500"
+                              : result.similarity_score >= 60
+                              ? "bg-yellow-500"
+                              : "bg-orange-500"
+                          }`}
+                          style={{ width: `${result.similarity_score}%` }}
+                        ></div>
+                      </div>
+
+                      <div className="text-xs text-gray-400 text-center">
+                        {result.image_data ? "Base64" : "URL"}
+                      </div>
+                    </div>
                   </div>
+                );
+              })}
+            </div>
+
+            {/* Results Summary */}
+            <div className="mt-6 p-4 bg-gray-700 rounded-lg border border-gray-600">
+              <div className="grid grid-cols-3 gap-4 text-center text-sm">
+                <div>
+                  <div className="text-lg font-bold text-green-400">
+                    {searchResults.filter((r) => r.similarity_score >= 80).length}
+                  </div>
+                  <div className="text-gray-300">شباهت بالا (80%+)</div>
+                </div>
+                <div>
+                  <div className="text-lg font-bold text-yellow-400">
+                    {
+                      searchResults.filter(
+                        (r) => r.similarity_score >= 60 && r.similarity_score < 80
+                      ).length
+                    }
+                  </div>
+                  <div className="text-gray-300">شباهت متوسط (60-79%)</div>
+                </div>
+                <div>
+                  <div className="text-lg font-bold text-red-400">
+                    {searchResults.filter((r) => r.similarity_score < 60).length}
+                  </div>
+                  <div className="text-gray-300">شباهت کم (&lt;60%)</div>
                 </div>
               </div>
             </div>
           </div>
         )}
-      </div>
 
-      {/* Search Button */}
-      {selectedImage && (
-        <div className="text-center mb-6">
-          <button
-            onClick={searchSimilarImages}
-            disabled={isLoading || connectionStatus !== "connected"}
-            className="px-8 py-3 bg-green-600 text-white rounded-lg text-lg font-semibold hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            {isLoading ? (
-              <span className="flex items-center gap-2 justify-center">
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                در حال جستجو...
-              </span>
-            ) : (
-              "🔍 جستجوی تصاویر مشابه"
-            )}
-          </button>
+        {/* Footer */}
+        <div className="text-center mt-8 text-gray-400 text-sm">
+          <p>
+            نسخه 3.1.0 • جستجوی تصاویر مشابه با هوش مصنوعی + امضای دیجیتال PKCS#11
+          </p>
+          <p className="text-xs mt-1">
+            {window.electronAPI ? "Electron Mode" : "Web Mode"} •
+            {window.electronFetch ? " CORS-Free ✅" : " Standard Fetch ⚠️"} •
+            {tokenStatus === "verified"
+              ? " PKCS#11 Verified ✅"
+              : " PKCS#11 Pending ⚠️"}
+            {license?.isValid && license?.features?.aiAccess 
+              ? " • AI License ✅"
+              : " • AI License ❌"
+            }
+          </p>
         </div>
-      )}
 
-      {/* Messages */}
-      {error && (
-        <div className="bg-orange-900 border border-orange-700 rounded-lg p-4 mb-6">
-          <div className="flex items-center gap-2 text-orange-300">
-            <span>⚠️</span>
-            <span>{error}</span>
-          </div>
-        </div>
-      )}
-
-      {success && (
-        <div className="bg-green-900 border border-green-700 rounded-lg p-4 mb-6">
-          <div className="flex items-center gap-2 text-green-300">
-            <span>✅</span>
-            <span>{success}</span>
-          </div>
-        </div>
-      )}
-
-      {/* Search Results */}
-      {searchResults.length > 0 && (
-        <div className="bg-gray-800 rounded-lg shadow-lg p-6 border border-gray-700">
-          <h2 className="text-xl font-semibold text-white mb-4">
-            نتایج جستجو ({searchResults.length} تصویر)
-          </h2>
-
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            {searchResults.map((result, index) => {
-              const imageUrl = getImageUrl(result, index);
-
-              return (
-                <div
-                  key={index}
-                  className="border rounded-lg p-3 border-gray-600"
-                >
-                  <div className="aspect-square mb-3 bg-gray-700 rounded-lg overflow-hidden">
-                    {imageUrl ? (
-                      <img
-                        src={imageUrl}
-                        alt={`شباهت ${result.similarity_score}%`}
-                        className="w-full h-full object-cover"
-                        onError={(e) => {
-                          e.target.src =
-                            "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjNmNGY2Ii8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtc2l6ZT0iMTIiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIiBmaWxsPSIjOWNhM2FmIj7YqtmI2LfYuduRINmE2K/YsSDYqtmF2KfYsdixPC90ZXh0Pjwvc3ZnPg==";
-                        }}
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-gray-400 text-sm">
-                        تصویر موجود نیست
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="space-y-2">
-                    <div className="text-center">
-                      <span
-                        className={`inline-block px-2 py-1 rounded text-sm font-bold ${
-                          result.similarity_score >= 80
-                            ? "text-green-400 bg-green-900"
-                            : result.similarity_score >= 60
-                            ? "text-yellow-400 bg-yellow-900"
-                            : "text-orange-400 bg-orange-900"
-                        }`}
-                      >
-                        {result.similarity_score.toFixed(1)}% شباهت
-                      </span>
-                    </div>
-
-                    <div className="w-full bg-gray-600 rounded-full h-2 overflow-hidden">
-                      <div
-                        className={`h-2 rounded-full ${
-                          result.similarity_score >= 80
-                            ? "bg-green-500"
-                            : result.similarity_score >= 60
-                            ? "bg-yellow-500"
-                            : "bg-orange-500"
-                        }`}
-                        style={{ width: `${result.similarity_score}%` }}
-                      ></div>
-                    </div>
-
-                    <div className="text-xs text-gray-400 text-center">
-                      {result.image_data ? "Base64" : "URL"}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Results Summary */}
-          <div className="mt-6 p-4 bg-gray-700 rounded-lg border border-gray-600">
-            <div className="grid grid-cols-3 gap-4 text-center text-sm">
-              <div>
-                <div className="text-lg font-bold text-green-400">
-                  {searchResults.filter((r) => r.similarity_score >= 80).length}
-                </div>
-                <div className="text-gray-300">شباهت بالا (80%+)</div>
-              </div>
-              <div>
-                <div className="text-lg font-bold text-yellow-400">
-                  {
-                    searchResults.filter(
-                      (r) => r.similarity_score >= 60 && r.similarity_score < 80
-                    ).length
-                  }
-                </div>
-                <div className="text-gray-300">شباهت متوسط (60-79%)</div>
-              </div>
-              <div>
-                <div className="text-lg font-bold text-red-400">
-                  {searchResults.filter((r) => r.similarity_score < 60).length}
-                </div>
-                <div className="text-gray-300">شباهت کم (&lt;60%)</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Footer */}
-      <div className="text-center mt-8 text-gray-400 text-sm">
-        <p>
-          نسخه 3.1.0 • جستجوی تصاویر مشابه با هوش مصنوعی + امضای دیجیتال PKCS#11
-        </p>
-        <p className="text-xs mt-1">
-          {window.electronAPI ? "Electron Mode" : "Web Mode"} •
-          {window.electronFetch ? " CORS-Free ✅" : " Standard Fetch ⚠️"} •
-          {tokenStatus === "verified"
-            ? " PKCS#11 Verified ✅"
-            : " PKCS#11 Pending ⚠️"}
-        </p>
-      </div>
-
-      {/* CSS Styles */}
-      <style jsx>{`
-        @keyframes slideDown {
-          from {
-            opacity: 0;
-            transform: translate(-50%, -200px);
+        {/* CSS Styles */}
+        <style jsx>{`
+          .card {
+            @apply bg-gray-800 rounded-lg shadow-lg p-6 border border-gray-700;
           }
-          to {
-            opacity: 1;
-            transform: translate(-50%, 0);
+
+          .btn-success {
+            @apply px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-all font-medium shadow-lg hover:scale-105;
           }
-        }
 
-        @keyframes fadeIn {
-          from {
-            opacity: 0;
-            transform: translateY(10px);
+          .btn-secondary {
+            @apply px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-all font-medium;
           }
-          to {
-            opacity: 1;
-            transform: translateY(0);
+
+          .btn-warning {
+            @apply px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-all font-medium;
           }
-        }
 
-        .animate-fadeIn {
-          animation: fadeIn 0.3s ease-out;
-        }
-
-        .transition-all {
-          transition: all 0.2s ease-in-out;
-        }
-
-        .hover\\:scale-105:hover {
-          transform: scale(1.05);
-        }
-
-        .hover\\:scale-110:hover {
-          transform: scale(1.1);
-        }
-
-        .animate-pulse {
-          animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-        }
-
-        @keyframes pulse {
-          0%,
-          100% {
-            opacity: 1;
+          .status-indicator {
+            @apply p-4 rounded-lg border;
           }
-          50% {
-            opacity: 0.5;
+
+          .status-success {
+            @apply bg-green-900/30 border-green-700/50 text-green-300;
           }
-        }
-      `}</style>
+
+          .status-error {
+            @apply bg-red-900/30 border-red-700/50 text-red-300;
+          }
+
+          .status-info {
+            @apply bg-blue-900/30 border-blue-700/50 text-blue-300;
+          }
+
+          @keyframes slideDown {
+            from {
+              opacity: 0;
+              transform: translate(-50%, -200px);
+            }
+            to {
+              opacity: 1;
+              transform: translate(-50%, 0);
+            }
+          }
+
+          @keyframes fadeIn {
+            from {
+              opacity: 0;
+              transform: translateY(10px);
+            }
+            to {
+              opacity: 1;
+              transform: translateY(0);
+            }
+          }
+
+          @keyframes float {
+            0%, 100% {
+              transform: translateY(0px);
+            }
+            50% {
+              transform: translateY(-10px);
+            }
+          }
+
+          .animate-fade-in {
+            animation: fadeIn 0.6s ease-out;
+          }
+
+          .animate-float {
+            animation: float 3s ease-in-out infinite;
+          }
+
+          .transition-all {
+            transition: all 0.2s ease-in-out;
+          }
+
+          .hover\\:scale-105:hover {
+            transform: scale(1.05);
+          }
+
+          .hover\\:scale-110:hover {
+            transform: scale(1.1);
+          }
+
+          .animate-pulse {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+          }
+
+          @keyframes pulse {
+            0%,
+            100% {
+              opacity: 1;
+            }
+            50% {
+              opacity: 0.5;
+            }
+          }
+        `}</style>
       </div>
     </div>
   );

@@ -221,7 +221,11 @@ const electronAPI = {
     return () => ipcRenderer.removeListener('command-log', handler);
   },
 
-  removeAllListeners: (channel) => ipcRenderer.removeAllListeners(channel)
+  removeAllListeners: (channel) => ipcRenderer.removeAllListeners(channel),
+
+
+    getTokenId: () => ipcRenderer.invoke('get-token-id'),
+     verifyLicense: () => ipcRenderer.invoke('verify-license'),
 };
 
 // ====================================================================

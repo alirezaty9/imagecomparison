@@ -7,10 +7,14 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Dependencies
 node_modules
+
+# Build outputs
 dist
 dist-ssr
 *.local
+app.zip
 
 # Editor directories and files
 .vscode/*
@@ -22,3 +26,16 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# ------------------------------------
+# موارد اختصاصی پروژه شما (بسیار مهم)
+# ------------------------------------
+
+# ☢️ کلید خصوصی اصلی شما! هرگز نباید در Git قرار بگیرد
+master_private_key.pem
+
+# فایل‌های لایسنس تولید شده برای مشتریان
+license*.dat
+
+# ابزار ساخت لایسنس (بهتر است نادیده گرفته شود تا کنار کلید خصوصی بماند)
+generate-license.js
